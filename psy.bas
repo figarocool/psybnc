@@ -158,6 +158,41 @@ Dim ServerNetworks As Map       ' Network associato a ogni server
 Dim ServerConfigs As Map        ' Configurazione per ogni server
 Dim ServerStatus As Map         ' Stato per ogni server
 
+' ======================
+' VHOST SUPPORT
+' ======================
+Dim VHostEnabled As Boolean     ' VHost abilitato
+Dim VHostAddress As String      ' Indirizzo VHost
+Dim VHostPort As Int           ' Porta VHost
+Dim VHostConnections As Map     ' Connessioni VHost
+
+' ======================
+' PROXY SUPPORT
+' ======================
+Dim ProxyEnabled As Boolean     ' Proxy abilitato
+Dim ProxyType As String         ' Tipo proxy (SOCKS4, SOCKS5, HTTP)
+Dim ProxyHost As String         ' Host proxy
+Dim ProxyPort As Int           ' Porta proxy
+Dim ProxyUsername As String     ' Username proxy
+Dim ProxyPassword As String     ' Password proxy
+
+' ======================
+' BAN MANAGEMENT
+' ======================
+Dim BanList As List            ' Lista ban utenti
+Dim BanReasons As Map          ' Motivi ban
+Dim BanDates As Map            ' Date ban
+Dim BanExpiry As Map           ' Scadenza ban
+Dim AutoBanEnabled As Boolean   ' Auto-ban abilitato
+
+' ======================
+' OP MANAGEMENT
+' ======================
+Dim OpList As List             ' Lista operatori
+Dim OpChannels As Map          ' Canali per ogni op
+Dim AutoOpEnabled As Boolean    ' Auto-op abilitato
+Dim OpLevels As Map            ' Livelli op per utente
+
 End Sub
 Sub Service_Create
 'TimerService.Initialize("TimerService",1000)
@@ -266,6 +301,41 @@ Sub Service_Start (StartingIntent As Intent)
 		ServerNetworks.Initialize
 		ServerConfigs.Initialize
 		ServerStatus.Initialize
+		
+		' ======================
+		' VHOST INIT
+		' ======================
+		VHostEnabled = False
+		VHostAddress = ""
+		VHostPort = 0
+		VHostConnections.Initialize
+		
+		' ======================
+		' PROXY INIT
+		' ======================
+		ProxyEnabled = False
+		ProxyType = "SOCKS5"
+		ProxyHost = ""
+		ProxyPort = 1080
+		ProxyUsername = ""
+		ProxyPassword = ""
+		
+		' ======================
+		' BAN MANAGEMENT INIT
+		' ======================
+		BanList.Initialize
+		BanReasons.Initialize
+		BanDates.Initialize
+		BanExpiry.Initialize
+		AutoBanEnabled = False
+		
+		' ======================
+		' OP MANAGEMENT INIT
+		' ======================
+		OpList.Initialize
+		OpChannels.Initialize
+		AutoOpEnabled = False
+		OpLevels.Initialize
 		
 		' ======================
 		' START SYSTEMS
@@ -810,6 +880,12 @@ Sub Bhelp()
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   ADDSERVER      - Adds server to network")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   CONNECTNETWORK - Connects to network")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   LISTCLIENTS    - Lists all clients")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   VHOST          - Sets virtual host")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   PROXY          - Sets proxy configuration")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   BAN            - Bans a user")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   UNBAN          - Unbans a user")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   OP             - Gives op to user")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DEOP            - Removes op from user")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   BHELP           - Lists this help OR help on a topic")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP Use /QUOTE bhelp <command> For details.")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP - End of help")
@@ -1373,6 +1449,196 @@ Dim tw As TextWriter
 			Dim ClientList As String
 			ClientList = GetClientList()
 			WriteSocket(":-psyBNC PRIVMSG psyBNC Clients: " & ClientList)
+			Return ""
+		End If
+		' ============================
+		' VHOST COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("VHOST") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
+			Dim VHostCommand As String
+			VHostCommand = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If VHostCommand.Length > 0 Then
+				Dim VHostParts() As String
+				VHostParts = VHostCommand.Split(":")
+				
+				If VHostParts.Length >= 2 Then
+					Dim VHostHost As String
+					Dim VHostPort As Int
+					VHostHost = VHostParts(0).Trim
+					VHostPort = VHostParts(1).Trim
+					
+					If SetVHost(VHostHost, VHostPort) Then
+						WriteSocket(":-psyBNC PRIVMSG psyBNC VHost set to " & VHostHost & ":" & VHostPort)
+					Else
+						WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to set VHost")
+					End If
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: VHOST host:port")
+				End If
+			Else
+				Dim VHostStatus As String
+				VHostStatus = GetVHostStatus()
+				WriteSocket(":-psyBNC PRIVMSG psyBNC " & VHostStatus)
+			End If
+			Return ""
+		End If
+		' ============================
+		' PROXY COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("PROXY") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
+			Dim ProxyCommand As String
+			ProxyCommand = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If ProxyCommand.Length > 0 Then
+				Dim ProxyParts() As String
+				ProxyParts = ProxyCommand.Split("'")
+				
+				If ProxyParts.Length >= 2 Then
+					Dim ProxyType As String
+					Dim ProxyHost As String
+					Dim ProxyPort As Int
+					Dim ProxyUsername As String
+					Dim ProxyPassword As String
+					
+					ProxyType = ProxyParts(0).Trim
+					Dim HostParts() As String
+					HostParts = ProxyParts(1).Split(":")
+					ProxyHost = HostParts(0).Trim
+					ProxyPort = HostParts(1).Trim
+					
+					If ProxyParts.Length >= 4 Then
+						ProxyUsername = ProxyParts(2).Trim
+						ProxyPassword = ProxyParts(3).Trim
+					End If
+					
+					If SetProxy(ProxyType, ProxyHost, ProxyPort, ProxyUsername, ProxyPassword) Then
+						WriteSocket(":-psyBNC PRIVMSG psyBNC Proxy set to " & ProxyType & "://" & ProxyHost & ":" & ProxyPort)
+					Else
+						WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to set proxy")
+					End If
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: PROXY type'host:port'username'password")
+				End If
+			Else
+				Dim ProxyStatus As String
+				ProxyStatus = GetProxyStatus()
+				WriteSocket(":-psyBNC PRIVMSG psyBNC " & ProxyStatus)
+			End If
+			Return ""
+		End If
+		' ============================
+		' BAN COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("BAN") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
+			Dim BanCommand As String
+			BanCommand = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If BanCommand.Length > 0 Then
+				Dim BanParts() As String
+				BanParts = BanCommand.Split("'")
+				
+				If BanParts.Length >= 2 Then
+					Dim BanUser As String
+					Dim BanReason As String
+					Dim BanExpiry As Int
+					
+					BanUser = BanParts(0).Trim
+					BanReason = BanParts(1).Trim
+					BanExpiry = 0
+					
+					If BanParts.Length >= 3 Then
+						BanExpiry = BanParts(2).Trim
+					End If
+					
+					If BanUser(BanUser, BanReason, BanExpiry) Then
+						WriteSocket(":-psyBNC PRIVMSG psyBNC User " & BanUser & " banned (Reason: " & BanReason & ")")
+					Else
+						WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to ban user " & BanUser)
+					End If
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: BAN user'reason'expiry_days")
+				End If
+			Else
+				Dim BanList As String
+				BanList = GetBanList()
+				WriteSocket(":-psyBNC PRIVMSG psyBNC " & BanList)
+			End If
+			Return ""
+		End If
+		' ============================
+		' UNBAN COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("UNBAN") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
+			Dim UnbanUser As String
+			UnbanUser = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If UnbanUser.Length > 0 Then
+				If UnbanUser(UnbanUser) Then
+					WriteSocket(":-psyBNC PRIVMSG psyBNC User " & UnbanUser & " unbanned")
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to unban user " & UnbanUser)
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: UNBAN user")
+			End If
+			Return ""
+		End If
+		' ============================
+		' OP COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("OP") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
+			Dim OpCommand As String
+			OpCommand = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If OpCommand.Length > 0 Then
+				Dim OpParts() As String
+				OpParts = OpCommand.Split("'")
+				
+				If OpParts.Length >= 2 Then
+					Dim OpUser As String
+					Dim OpChannel As String
+					Dim OpLevel As Int
+					
+					OpUser = OpParts(0).Trim
+					OpChannel = OpParts(1).Trim
+					OpLevel = 1
+					
+					If OpParts.Length >= 3 Then
+						OpLevel = OpParts(2).Trim
+					End If
+					
+					If GiveOp(OpUser, OpChannel, OpLevel) Then
+						WriteSocket(":-psyBNC PRIVMSG psyBNC User " & OpUser & " given op on " & OpChannel & " (Level: " & OpLevel & ")")
+					Else
+						WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to give op to " & OpUser)
+					End If
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: OP user'channel'level")
+				End If
+			Else
+				Dim OpList As String
+				OpList = GetOpList()
+				WriteSocket(":-psyBNC PRIVMSG psyBNC " & OpList)
+			End If
+			Return ""
+		End If
+		' ============================
+		' DEOP COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("DEOP") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
+			Dim DeopUser As String
+			DeopUser = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If DeopUser.Length > 0 Then
+				If RemoveOp(DeopUser) Then
+					WriteSocket(":-psyBNC PRIVMSG psyBNC User " & DeopUser & " op removed")
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to remove op from " & DeopUser)
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: DEOP user")
+			End If
 			Return ""
 		End If
 		' ============================
@@ -2395,6 +2661,12 @@ Sub AuthenticateUser(Login As String, Password As String) As Boolean
 			Return False
 		End If
 		
+		' Controlla se utente è bannato
+		If IsUserBanned(Login) Then
+			LogError("USER_BANNED", "Banned user attempted login: " & Login, "AuthenticateUser")
+			Return False
+		End If
+		
 		' Controlla password
 		If UserPasswords.Get(Login) = Password Then
 			' Login successful
@@ -2759,6 +3031,363 @@ Sub ConnectToIRCServer(ServerHost As String, ServerPort As Int, NetworkName As S
 	Catch Error As Exception
 		LogError("IRC_CONNECTION_ERROR", Error.Message, "ConnectToIRCServer")
 		Return False
+	End Try
+End Sub
+
+' ======================
+' VHOST FUNCTIONS
+' ======================
+
+Sub SetVHost(Host As String, Port As Int) As Boolean
+	Try
+		VHostEnabled = True
+		VHostAddress = Host
+		VHostPort = Port
+		
+		LogInfo("VHost set to " & Host & ":" & Port, "SetVHost")
+		Return True
+		
+	Catch Error As Exception
+		LogError("VHOST_SET_ERROR", Error.Message, "SetVHost")
+		Return False
+	End Try
+End Sub
+
+Sub DisableVHost() As Boolean
+	Try
+		VHostEnabled = False
+		VHostAddress = ""
+		VHostPort = 0
+		
+		LogInfo("VHost disabled", "DisableVHost")
+		Return True
+		
+	Catch Error As Exception
+		LogError("VHOST_DISABLE_ERROR", Error.Message, "DisableVHost")
+		Return False
+	End Try
+End Sub
+
+Sub GetVHostStatus() As String
+	Try
+		Dim Status As String
+		Status = "VHost Status:" & Chr(10)
+		Status = Status & "Enabled: " & VHostEnabled & Chr(10)
+		
+		If VHostEnabled Then
+			Status = Status & "Address: " & VHostAddress & Chr(10)
+			Status = Status & "Port: " & VHostPort & Chr(10)
+		End If
+		
+		Return Status
+		
+	Catch Error As Exception
+		LogError("VHOST_STATUS_ERROR", Error.Message, "GetVHostStatus")
+		Return "Error retrieving VHost status"
+	End Try
+End Sub
+
+' ======================
+' PROXY FUNCTIONS
+' ======================
+
+Sub SetProxy(ProxyType As String, Host As String, Port As Int, Username As String, Password As String) As Boolean
+	Try
+		ProxyEnabled = True
+		ProxyType = ProxyType
+		ProxyHost = Host
+		ProxyPort = Port
+		ProxyUsername = Username
+		ProxyPassword = Password
+		
+		LogInfo("Proxy set to " & ProxyType & "://" & Host & ":" & Port, "SetProxy")
+		Return True
+		
+	Catch Error As Exception
+		LogError("PROXY_SET_ERROR", Error.Message, "SetProxy")
+		Return False
+	End Try
+End Sub
+
+Sub DisableProxy() As Boolean
+	Try
+		ProxyEnabled = False
+		ProxyType = ""
+		ProxyHost = ""
+		ProxyPort = 0
+		ProxyUsername = ""
+		ProxyPassword = ""
+		
+		LogInfo("Proxy disabled", "DisableProxy")
+		Return True
+		
+	Catch Error As Exception
+		LogError("PROXY_DISABLE_ERROR", Error.Message, "DisableProxy")
+		Return False
+	End Try
+End Sub
+
+Sub GetProxyStatus() As String
+	Try
+		Dim Status As String
+		Status = "Proxy Status:" & Chr(10)
+		Status = Status & "Enabled: " & ProxyEnabled & Chr(10)
+		
+		If ProxyEnabled Then
+			Status = Status & "Type: " & ProxyType & Chr(10)
+			Status = Status & "Host: " & ProxyHost & Chr(10)
+			Status = Status & "Port: " & ProxyPort & Chr(10)
+			If ProxyUsername.Length > 0 Then
+				Status = Status & "Username: " & ProxyUsername & Chr(10)
+			End If
+		End If
+		
+		Return Status
+		
+	Catch Error As Exception
+		LogError("PROXY_STATUS_ERROR", Error.Message, "GetProxyStatus")
+		Return "Error retrieving proxy status"
+	End Try
+End Sub
+
+' ======================
+' BAN MANAGEMENT FUNCTIONS
+' ======================
+
+Sub BanUser(User As String, Reason As String, ExpiryDays As Int) As Boolean
+	Try
+		' Controlla se utente è già bannato
+		If BanList.IndexOf(User) <> -1 Then
+			LogError("USER_ALREADY_BANNED", "User already banned: " & User, "BanUser")
+			Return False
+		End If
+		
+		' Aggiungi ban
+		BanList.Add(User)
+		BanReasons.Put(User, Reason)
+		BanDates.Put(User, DateTime.Now)
+		
+		If ExpiryDays > 0 Then
+			Dim ExpiryDate As Long
+			ExpiryDate = DateTime.Now + (ExpiryDays * 24 * 60 * 60 * 1000)
+			BanExpiry.Put(User, ExpiryDate)
+		End If
+		
+		LogInfo("User banned: " & User & " (Reason: " & Reason & ")", "BanUser")
+		Return True
+		
+	Catch Error As Exception
+		LogError("BAN_USER_ERROR", Error.Message, "BanUser")
+		Return False
+	End Try
+End Sub
+
+Sub UnbanUser(User As String) As Boolean
+	Try
+		' Controlla se utente è bannato
+		If BanList.IndexOf(User) = -1 Then
+			LogError("USER_NOT_BANNED", "User not banned: " & User, "UnbanUser")
+			Return False
+		End If
+		
+		' Rimuovi ban
+		BanList.RemoveAt(BanList.IndexOf(User))
+		BanReasons.Remove(User)
+		BanDates.Remove(User)
+		BanExpiry.Remove(User)
+		
+		LogInfo("User unbanned: " & User, "UnbanUser")
+		Return True
+		
+	Catch Error As Exception
+		LogError("UNBAN_USER_ERROR", Error.Message, "UnbanUser")
+		Return False
+	End Try
+End Sub
+
+Sub IsUserBanned(User As String) As Boolean
+	Try
+		' Controlla se utente è bannato
+		If BanList.IndexOf(User) = -1 Then
+			Return False
+		End If
+		
+		' Controlla scadenza ban
+		If BanExpiry.ContainsKey(User) Then
+			Dim ExpiryDate As Long
+			ExpiryDate = BanExpiry.Get(User)
+			If DateTime.Now > ExpiryDate Then
+				' Ban scaduto, rimuovi
+				UnbanUser(User)
+				Return False
+			End If
+		End If
+		
+		Return True
+		
+	Catch Error As Exception
+		LogError("IS_BANNED_ERROR", Error.Message, "IsUserBanned")
+		Return False
+	End Try
+End Sub
+
+Sub GetBanList() As String
+	Try
+		Dim Result As String
+		Result = "Ban List:" & Chr(10)
+		
+		If BanList.Size = 0 Then
+			Result = Result & "No banned users."
+		Else
+			For i = 0 To BanList.Size - 1
+				Dim User As String
+				User = BanList.Get(i)
+				
+				Dim Reason As String
+				Reason = BanReasons.Get(User)
+				
+				Dim BanDate As Long
+				BanDate = BanDates.Get(User)
+				
+				Result = Result & (i+1) & ". " & User & " - " & Reason & " (Since: " & BanDate & ")" & Chr(10)
+			Next
+		End If
+		
+		Return Result
+		
+	Catch Error As Exception
+		LogError("GET_BAN_LIST_ERROR", Error.Message, "GetBanList")
+		Return "Error retrieving ban list"
+	End Try
+End Sub
+
+Sub EnableAutoBan(Enable As Boolean)
+	Try
+		AutoBanEnabled = Enable
+		
+		If Enable Then
+			LogInfo("Auto-ban enabled", "EnableAutoBan")
+		Else
+			LogInfo("Auto-ban disabled", "EnableAutoBan")
+		End If
+		
+	Catch Error As Exception
+		LogError("AUTO_BAN_ERROR", Error.Message, "EnableAutoBan")
+	End Try
+End Sub
+
+' ======================
+' OP MANAGEMENT FUNCTIONS
+' ======================
+
+Sub GiveOp(User As String, Channel As String, Level As Int) As Boolean
+	Try
+		' Controlla se utente è già op
+		If OpList.IndexOf(User) <> -1 Then
+			LogError("USER_ALREADY_OP", "User already has op: " & User, "GiveOp")
+			Return False
+		End If
+		
+		' Aggiungi op
+		OpList.Add(User)
+		OpChannels.Put(User, Channel)
+		OpLevels.Put(User, Level)
+		
+		LogInfo("User given op: " & User & " on " & Channel & " (Level: " & Level & ")", "GiveOp")
+		Return True
+		
+	Catch Error As Exception
+		LogError("GIVE_OP_ERROR", Error.Message, "GiveOp")
+		Return False
+	End Try
+End Sub
+
+Sub RemoveOp(User As String) As Boolean
+	Try
+		' Controlla se utente è op
+		If OpList.IndexOf(User) = -1 Then
+			LogError("USER_NOT_OP", "User not op: " & User, "RemoveOp")
+			Return False
+		End If
+		
+		' Rimuovi op
+		OpList.RemoveAt(OpList.IndexOf(User))
+		OpChannels.Remove(User)
+		OpLevels.Remove(User)
+		
+		LogInfo("User op removed: " & User, "RemoveOp")
+		Return True
+		
+	Catch Error As Exception
+		LogError("REMOVE_OP_ERROR", Error.Message, "RemoveOp")
+		Return False
+	End Try
+End Sub
+
+Sub IsUserOp(User As String) As Boolean
+	Try
+		Return OpList.IndexOf(User) <> -1
+	Catch Error As Exception
+		LogError("IS_OP_ERROR", Error.Message, "IsUserOp")
+		Return False
+	End Try
+End Sub
+
+Sub GetOpList() As String
+	Try
+		Dim Result As String
+		Result = "Op List:" & Chr(10)
+		
+		If OpList.Size = 0 Then
+			Result = Result & "No operators."
+		Else
+			For i = 0 To OpList.Size - 1
+				Dim User As String
+				User = OpList.Get(i)
+				
+				Dim Channel As String
+				Channel = OpChannels.Get(User)
+				
+				Dim Level As Int
+				Level = OpLevels.Get(User)
+				
+				Result = Result & (i+1) & ". " & User & " - " & Channel & " (Level: " & Level & ")" & Chr(10)
+			Next
+		End If
+		
+		Return Result
+		
+	Catch Error As Exception
+		LogError("GET_OP_LIST_ERROR", Error.Message, "GetOpList")
+		Return "Error retrieving op list"
+	End Try
+End Sub
+
+Sub EnableAutoOp(Enable As Boolean)
+	Try
+		AutoOpEnabled = Enable
+		
+		If Enable Then
+			LogInfo("Auto-op enabled", "EnableAutoOp")
+		Else
+			LogInfo("Auto-op disabled", "EnableAutoOp")
+		End If
+		
+	Catch Error As Exception
+		LogError("AUTO_OP_ERROR", Error.Message, "EnableAutoOp")
+	End Try
+End Sub
+
+Sub GetOpLevel(User As String) As Int
+	Try
+		If OpLevels.ContainsKey(User) Then
+			Return OpLevels.Get(User)
+		Else
+			Return 0
+		End If
+	Catch Error As Exception
+		LogError("GET_OP_LEVEL_ERROR", Error.Message, "GetOpLevel")
+		Return 0
 	End Try
 End Sub
 
