@@ -1,16 +1,16 @@
-﻿Version=6.5
-NumberOfModules=1
-Module1=psy
-Build1=Default,psybnc.pack
-ManifestCode=
-IconFile=
-NumberOfFiles=1
+﻿Build1=Default,psybnc.pack
 File1=frmprincipale.bal
-NumberOfLibraries=4
+FileGroup1=Default Group
+Group=Default Group
 Library1=core
 Library2=network
 Library3=randomaccessfile
-Library4=jhwifi
+ManifestCode=
+Module1=psy
+NumberOfFiles=1
+NumberOfLibraries=3
+NumberOfModules=1
+Version=13.4
 @EndOfDesignText@
 #Region Module Attributes
 	#FullScreen: False

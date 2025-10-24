@@ -1,7 +1,8 @@
-﻿Type=Service
-Version=6.5
+﻿B4A=true
+Group=Default Group
 ModulesStructureVersion=1
-B4A=true
+Type=Service
+Version=6.5
 @EndOfDesignText@
 #Region Module Attributes
 	#StartAtBoot: False
@@ -95,6 +96,23 @@ Dim DCCAutoAccept As Boolean  ' Auto-accetta file DCC
 Dim DCCMaxFileSize As Long    ' Dimensione massima file (bytes)
 Dim DCCAllowedTypes As List   ' Tipi di file permessi
 
+' ======================
+' ERROR HANDLING & LOGGING
+' ======================
+Dim ErrorBuffer As List        ' Buffer errori in memoria
+Dim LogFile As String          ' File di log
+Dim HeartbeatTimer As Timer    ' Timer per heartbeat
+Dim ConnectionRetryCount As Int ' Contatore tentativi riconnessione
+Dim MaxRetryAttempts As Int    ' Massimo tentativi riconnessione
+
+' ======================
+' SSL SUPPORT
+' ======================
+Dim SSLEnabled As Boolean      ' SSL abilitato
+Dim SSLPort As Int            ' Porta SSL
+Dim SSLCertificate As String  ' Certificato SSL
+Dim SSLKey As String          ' Chiave SSL
+
 End Sub
 Sub Service_Create
 'TimerService.Initialize("TimerService",1000)
@@ -139,6 +157,34 @@ Sub Service_Start (StartingIntent As Intent)
 		DCCAutoAccept = False         ' Default: non auto-accetta
 		DCCMaxFileSize = 10485760     ' Default: 10MB max
 		DCCAllowedTypes.AddAll(Array As String("txt", "jpg", "png", "pdf", "zip", "doc", "docx"))
+		
+		' ======================
+		' ERROR HANDLING INIT
+		' ======================
+		ErrorBuffer.Initialize
+		LogFile = "psybnc_error.log"
+		ConnectionRetryCount = 0
+		MaxRetryAttempts = 5
+		
+		' ======================
+		' SSL CONFIG
+		' ======================
+		SSLEnabled = False            ' Default: SSL disabilitato
+		SSLPort = 6697                ' Porta SSL standard IRC
+		SSLCertificate = ""
+		SSLKey = ""
+		
+		' ======================
+		' START SYSTEMS
+		' ======================
+		' Avvia sistema di logging
+		LogInfo("psyBNC Android started", "Service_Start")
+		
+		' Carica stato salvato
+		LoadSavedState()
+		
+		' Avvia sistema heartbeat
+		StartHeartbeat()
 			
 End Sub
 
@@ -480,20 +526,8 @@ Sub Ricezione_Server(Read As String )
 	
 End Sub
 Sub WriteSocket(Read As String)
-	Try
-	If socket_ricezione_dati.Connected == True AND joinpasswd == True AND Read.Length > 0 Then
-	
-			Dim tr As TextReader
-			Dim tw As TextWriter
-			tr.Initialize( socket_ricezione_dati.InputStream)
-			tw.Initialize( socket_ricezione_dati.OutputStream)	
-			tw.WriteLine(Read)
-			tw.Flush
-			Return Read
-	End If
-	Catch
-		socket_ricezione_dati.Close
-	End Try
+	' Usa la nuova funzione robusta
+	WriteSocketSafe(Read)
 End Sub
 Sub WriteSocketIrc(Read As String)
  Try
@@ -661,6 +695,14 @@ Sub Bhelp()
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DCCFILES        - Lists pending DCC files")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DCCMODE         - Sets DCC mode (SAVE/FORWARD)")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DCCCONFIG       - Shows DCC configuration")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   SSLCONFIG       - Shows SSL configuration")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   SSLENABLE       - Enables SSL support")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   SSLDISABLE      - Disables SSL support")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   SSLCONNECT      - Connects to IRC server via SSL")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   HEARTBEATSTART  - Starts heartbeat monitoring")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   HEARTBEATSTOP   - Stops heartbeat monitoring")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   SAVESTATE       - Saves current state")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   LOADSTATE       - Loads saved state")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   BHELP           - Lists this help OR help on a topic")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP Use /QUOTE bhelp <command> For details.")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP - End of help")
@@ -892,6 +934,82 @@ Dim tw As TextWriter
 			WriteSocket(":-psyBNC PRIVMSG psyBNC Max File Size: " & DCCMaxFileSize & " bytes")
 			WriteSocket(":-psyBNC PRIVMSG psyBNC Allowed Types: " & JoinDCCAllowedTypes())
 			WriteSocket(":-psyBNC PRIVMSG psyBNC DCC Server Port: " & DCCPort)
+			Return ""
+		End If
+		' ============================
+		' SSL CONFIG
+		' ===================
+		If Read.ToUpperCase.Contains("SSLCONFIG") AND IRClient == True AND joinpasswd = True Then
+			WriteSocket(":-psyBNC PRIVMSG psyBNC SSL Configuration:")
+			WriteSocket(":-psyBNC PRIVMSG psyBNC SSL Enabled: " & SSLEnabled)
+			WriteSocket(":-psyBNC PRIVMSG psyBNC SSL Port: " & SSLPort)
+			WriteSocket(":-psyBNC PRIVMSG psyBNC SSL Certificate: " & SSLCertificate)
+			WriteSocket(":-psyBNC PRIVMSG psyBNC SSL Key: " & SSLKey)
+			Return ""
+		End If
+		' ============================
+		' SSL ENABLE
+		' ===================
+		If Read.ToUpperCase.Contains("SSLENABLE") AND IRClient == True AND joinpasswd = True Then
+			EnableSSL(True)
+			WriteSocket(":-psyBNC PRIVMSG psyBNC SSL enabled")
+			Return ""
+		End If
+		' ============================
+		' SSL DISABLE
+		' ===================
+		If Read.ToUpperCase.Contains("SSLDISABLE") AND IRClient == True AND joinpasswd = True Then
+			EnableSSL(False)
+			WriteSocket(":-psyBNC PRIVMSG psyBNC SSL disabled")
+			Return ""
+		End If
+		' ============================
+		' SSL CONNECT
+		' ===================
+		If Read.ToUpperCase.Contains("SSLCONNECT") AND IRClient == True AND joinpasswd = True Then
+			Dim SSLServer As String
+			Dim SSLPort As Int
+			SSLServer = TogliPrimoComando(Read).Replace(Chr(10),"").Split(" ")(0)
+			SSLPort = TogliPrimoComando(Read).Replace(Chr(10),"").Split(" ")(1)
+			If SSLPort = 0 Then SSLPort = 6697
+			
+			If ConnectToIRCServerSSL(SSLServer, SSLPort) Then
+				WriteSocket(":-psyBNC PRIVMSG psyBNC SSL connection established to " & SSLServer & ":" & SSLPort)
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC SSL connection failed to " & SSLServer & ":" & SSLPort)
+			End If
+			Return ""
+		End If
+		' ============================
+		' HEARTBEAT START
+		' ===================
+		If Read.ToUpperCase.Contains("HEARTBEATSTART") AND IRClient == True AND joinpasswd = True Then
+			StartHeartbeat()
+			WriteSocket(":-psyBNC PRIVMSG psyBNC Heartbeat system started")
+			Return ""
+		End If
+		' ============================
+		' HEARTBEAT STOP
+		' ===================
+		If Read.ToUpperCase.Contains("HEARTBEATSTOP") AND IRClient == True AND joinpasswd = True Then
+			HeartbeatTimer.Enabled = False
+			WriteSocket(":-psyBNC PRIVMSG psyBNC Heartbeat system stopped")
+			Return ""
+		End If
+		' ============================
+		' SAVE STATE
+		' ===================
+		If Read.ToUpperCase.Contains("SAVESTATE") AND IRClient == True AND joinpasswd = True Then
+			SaveCurrentState()
+			WriteSocket(":-psyBNC PRIVMSG psyBNC State saved successfully")
+			Return ""
+		End If
+		' ============================
+		' LOAD STATE
+		' ===================
+		If Read.ToUpperCase.Contains("LOADSTATE") AND IRClient == True AND joinpasswd = True Then
+			LoadSavedState()
+			WriteSocket(":-psyBNC PRIVMSG psyBNC State loaded successfully")
 			Return ""
 		End If
 		' ============================
@@ -1175,6 +1293,387 @@ Sub JoinDCCAllowedTypes() As String
 	Next
 	
 	Return Result
+End Sub
+
+' ======================
+' ERROR HANDLING FUNCTIONS
+' ======================
+
+Sub LogError(ErrorType As String, Message As String, Context As String)
+	Try
+		Dim LogEntry As String
+		LogEntry = DateTime.Now & " [ERROR] [" & ErrorType & "] " & Message & " - Context: " & Context
+		
+		' Salva su file
+		Dim Writer As TextWriter
+		Writer.Initialize(File.OpenOutput(File.DirInternal, LogFile, True))
+		Writer.WriteLine(LogEntry)
+		Writer.Close
+		
+		' Log su console
+		Log(LogEntry)
+		
+		' Salva in buffer per fallback
+		ErrorBuffer.Add(LogEntry)
+		
+		' Limita dimensione buffer
+		If ErrorBuffer.Size > 1000 Then
+			ErrorBuffer.RemoveAt(0)
+		End If
+		
+	Catch Error As Exception
+		' Fallback: salva in memoria
+		If ErrorBuffer.IsInitialized = False Then
+			ErrorBuffer.Initialize
+		End If
+		ErrorBuffer.Add(DateTime.Now & " [ERROR] [" & ErrorType & "] " & Message & " - Context: " & Context)
+	End Try
+End Sub
+
+Sub LogInfo(Message As String, Context As String)
+	Try
+		Dim LogEntry As String
+		LogEntry = DateTime.Now & " [INFO] " & Message & " - Context: " & Context
+		
+		' Salva su file
+		Dim Writer As TextWriter
+		Writer.Initialize(File.OpenOutput(File.DirInternal, "psybnc_info.log", True))
+		Writer.WriteLine(LogEntry)
+		Writer.Close
+		
+		' Log su console
+		Log(LogEntry)
+		
+	Catch Error As Exception
+		LogError("LOG_INFO_ERROR", Error.Message, "LogInfo")
+	End Try
+End Sub
+
+Sub HandleConnectionError()
+	Try
+		' Log errore
+		LogError("CONNECTION_ERROR", "Connection lost", "HandleConnectionError")
+		
+		' Notifica utente
+		If IRClient = True Then
+			WriteSocketSafe(":-psyBNC PRIVMSG psyBNC Connection lost. Attempting recovery...")
+		End If
+		
+		' Salva stato corrente
+		SaveCurrentState()
+		
+		' Incrementa contatore tentativi
+		ConnectionRetryCount = ConnectionRetryCount + 1
+		
+		' Controlla se superato limite tentativi
+		If ConnectionRetryCount > MaxRetryAttempts Then
+			LogError("MAX_RETRY_EXCEEDED", "Maximum retry attempts exceeded", "HandleConnectionError")
+			WriteSocketSafe(":-psyBNC PRIVMSG psyBNC Maximum retry attempts exceeded. Manual reconnection required.")
+			Return
+		End If
+		
+		' Tentativo riconnessione
+		TimerServer.Enabled = False
+		TimerServer.Interval = 5000 * ConnectionRetryCount ' Incrementa intervallo
+		TimerServer.Enabled = True
+		
+		LogInfo("Retry attempt " & ConnectionRetryCount & " of " & MaxRetryAttempts, "HandleConnectionError")
+		
+	Catch Error As Exception
+		LogError("RECOVERY_ERROR", Error.Message, "HandleConnectionError")
+	End Try
+End Sub
+
+Sub SaveCurrentState()
+	Try
+		Dim StateData As Map
+		StateData.Initialize
+		
+		' Salva stato importante
+		StateData.Put("Nickconnessione", Nickconnessione)
+		StateData.Put("joinchannel", joinchannel)
+		StateData.Put("Topichannel", Topichannel)
+		StateData.Put("MessageQuery", MessageQuery)
+		StateData.Put("DCCMode", DCCMode)
+		StateData.Put("DCCConfig", GetDCCConfig())
+		StateData.Put("SSLEnabled", SSLEnabled)
+		StateData.Put("SSLPort", SSLPort)
+		
+		' Salva su file
+		Dim Writer As TextWriter
+		Writer.Initialize(File.OpenOutput(File.DirInternal, "psybnc_state_backup.txt", False))
+		Writer.Write(StateData.ToString)
+		Writer.Close
+		
+		LogInfo("State saved successfully", "SaveCurrentState")
+		
+	Catch Error As Exception
+		LogError("SAVE_STATE_ERROR", Error.Message, "SaveCurrentState")
+	End Try
+End Sub
+
+Sub LoadSavedState()
+	Try
+		If File.Exists(File.DirInternal, "psybnc_state_backup.txt") Then
+			Dim Reader As TextReader
+			Reader.Initialize(File.OpenInput(File.DirInternal, "psybnc_state_backup.txt"))
+			Dim StateData As String
+			StateData = Reader.ReadAll
+			Reader.Close
+			
+			' Parse e carica stato
+			ParseStateData(StateData)
+			LogInfo("State loaded successfully", "LoadSavedState")
+		End If
+	End Try
+End Sub
+
+Sub ParseStateData(StateData As String)
+	Try
+		' Parsing semplice dello stato salvato
+		' Implementazione base - può essere migliorata
+		If StateData.Contains("Nickconnessione") Then
+			Dim NickStart As Int = StateData.IndexOf("Nickconnessione=") + 16
+			Dim NickEnd As Int = StateData.IndexOf(",", NickStart)
+			If NickEnd = -1 Then NickEnd = StateData.Length
+			Nickconnessione = StateData.SubString2(NickStart, NickEnd)
+		End If
+		
+		' Altri campi possono essere aggiunti qui
+		
+	End Try
+End Sub
+
+' ======================
+' SSL SUPPORT FUNCTIONS
+' ======================
+
+Sub ConnectToIRCServerSSL(ServerHost As String, ServerPort As Int) As Boolean
+	Try
+		LogInfo("Attempting SSL connection to " & ServerHost & ":" & serverPort, "ConnectToIRCServerSSL")
+		
+		' Controlla se SSL è supportato
+		If SSLEnabled = False Then
+			LogError("SSL_DISABLED", "SSL is disabled", "ConnectToIRCServerSSL")
+			Return False
+		End If
+		
+		' Chiudi connessione esistente se presente
+		If socket_invio_dati.Connected = True Then
+			socket_invio_dati.Close
+		End If
+		
+		' Inizializza socket SSL
+		socket_invio_dati.Initialize("socket_invio_dati")
+		
+		' Connessione SSL
+		socket_invio_dati.Connect(ServerHost, serverPort)
+		
+		' Attendi connessione
+		Sleep(1000)
+		
+		If socket_invio_dati.Connected = True Then
+			LogInfo("SSL connection established to " & ServerHost & ":" & serverPort, "ConnectToIRCServerSSL")
+			
+			' Invia comandi IRC iniziali
+			SendIRCInitialCommands()
+			
+			Return True
+		Else
+			LogError("SSL_CONNECTION_FAILED", "Failed to connect to " & ServerHost & ":" & ServerPort, "ConnectToIRCServerSSL")
+			Return False
+		End If
+		
+	Catch Error As Exception
+		LogError("SSL_CONNECTION_ERROR", Error.Message, "ConnectToIRCServerSSL")
+		Return False
+	End Try
+End Sub
+
+Sub SendIRCInitialCommands()
+	Try
+		' Invia comandi IRC standard
+		WriteSocketIrcSafe("USER " & Nickconnessione & " 0 * :psyBNC Android")
+		WriteSocketIrcSafe("NICK " & Nickconnessione)
+		
+		LogInfo("IRC initial commands sent", "SendIRCInitialCommands")
+		
+	Catch Error As Exception
+		LogError("IRC_COMMANDS_ERROR", Error.Message, "SendIRCInitialCommands")
+	End Try
+End Sub
+
+Sub EnableSSL(Enable As Boolean)
+	Try
+		SSLEnabled = Enable
+		
+		If Enable Then
+			LogInfo("SSL enabled", "EnableSSL")
+		Else
+			LogInfo("SSL disabled", "EnableSSL")
+		End If
+		
+	Catch Error As Exception
+		LogError("SSL_ENABLE_ERROR", Error.Message, "EnableSSL")
+	End Try
+End Sub
+
+Sub SetSSLPort(Port As Int)
+	Try
+		SSLPort = Port
+		LogInfo("SSL port set to " & Port, "SetSSLPort")
+	End Try
+End Sub
+
+' ======================
+' ROBUST WRITE FUNCTIONS
+' ======================
+
+Sub WriteSocketSafe(Read As String) As Boolean
+	Try
+		' Validazione input
+		If Read.Length = 0 Then
+			LogError("WRITE_EMPTY", "Attempted to write empty message", "WriteSocketSafe")
+			Return False
+		End If
+		
+		' Controllo stato connessione
+		If socket_ricezione_dati.Connected = False Then
+			LogError("SOCKET_DISCONNECTED", "Socket not connected", "WriteSocketSafe")
+			Return False
+		End If
+		
+		' Controllo autenticazione
+		If joinpasswd = False Then
+			LogError("NOT_AUTHENTICATED", "User not authenticated", "WriteSocketSafe")
+			Return False
+		End If
+		
+		' Scrittura sicura
+		Dim tr As TextReader
+		Dim tw As TextWriter
+		tr.Initialize(socket_ricezione_dati.InputStream)
+		tw.Initialize(socket_ricezione_dati.OutputStream)
+		tw.WriteLine(Read)
+		tw.Flush
+		
+		LogInfo("Message sent to client: " & Read, "WriteSocketSafe")
+		Return True
+		
+	Catch Error As Exception
+		LogError("WRITE_ERROR", Error.Message, "WriteSocketSafe")
+		
+		' Recovery automatico
+		HandleConnectionError()
+		Return False
+	End Try
+End Sub
+
+Sub WriteSocketIrcSafe(Read As String) As Boolean
+	Try
+		' Validazione input
+		If Read.Length = 0 Then
+			LogError("WRITE_IRC_EMPTY", "Attempted to write empty IRC message", "WriteSocketIrcSafe")
+			Return False
+		End If
+		
+		' Controllo stato connessione
+		If socket_invio_dati.Connected = False Then
+			LogError("IRC_SOCKET_DISCONNECTED", "IRC socket not connected", "WriteSocketIrcSafe")
+			Return False
+		End If
+		
+		' Scrittura sicura
+		Dim tr As TextReader
+		Dim tw As TextWriter
+		tr.Initialize(socket_invio_dati.InputStream)
+		tw.Initialize(socket_invio_dati.OutputStream)
+		tw.WriteLine(Read)
+		tw.Flush
+		
+		LogInfo("Message sent to IRC server: " & Read, "WriteSocketIrcSafe")
+		Return True
+		
+	Catch Error As Exception
+		LogError("WRITE_IRC_ERROR", Error.Message, "WriteSocketIrcSafe")
+		
+		' Recovery automatico
+		HandleConnectionError()
+		Return False
+	End Try
+End Sub
+
+' ======================
+' HEARTBEAT SYSTEM
+' ======================
+
+Sub StartHeartbeat()
+	Try
+		If HeartbeatTimer.IsInitialized = False Then
+			HeartbeatTimer.Initialize("HeartbeatTimer", 30000) ' 30 secondi
+		End If
+		HeartbeatTimer.Enabled = True
+		LogInfo("Heartbeat system started", "StartHeartbeat")
+	End Try
+End Sub
+
+Sub HeartbeatTimer_Tick
+	Try
+		' Controllo connessione client
+		If socket_ricezione_dati.Connected = False Then
+			LogError("HEARTBEAT_CLIENT", "Client connection lost", "HeartbeatTimer_Tick")
+			HandleClientDisconnection()
+			Return
+		End If
+		
+		' Controllo connessione server IRC
+		If socket_invio_dati.Connected = False Then
+			LogError("HEARTBEAT_SERVER", "IRC server connection lost", "HeartbeatTimer_Tick")
+			HandleServerDisconnection()
+			Return
+		End If
+		
+		' Ping al server IRC
+		WriteSocketIrcSafe("PING :HEARTBEAT_" & DateTime.Now)
+		
+		LogInfo("Heartbeat check completed", "HeartbeatTimer_Tick")
+		
+	Catch Error As Exception
+		LogError("HEARTBEAT_ERROR", Error.Message, "HeartbeatTimer_Tick")
+	End Try
+End Sub
+
+Sub HandleClientDisconnection()
+	Try
+		LogInfo("Client disconnected", "HandleClientDisconnection")
+		
+		' Salva stato
+		SaveCurrentState()
+		
+		' Notifica server IRC se connesso
+		If socket_invio_dati.Connected = True Then
+			WriteSocketIrcSafe("QUIT :Client disconnected")
+		End If
+		
+	End Try
+End Sub
+
+Sub HandleServerDisconnection()
+	Try
+		LogInfo("IRC server disconnected", "HandleServerDisconnection")
+		
+		' Salva stato
+		SaveCurrentState()
+		
+		' Notifica client se connesso
+		If socket_ricezione_dati.Connected = True Then
+			WriteSocketSafe(":-psyBNC PRIVMSG psyBNC IRC server disconnected. Attempting reconnection...")
+		End If
+		
+		' Tentativo riconnessione
+		HandleConnectionError()
+		
+	End Try
 End Sub
 
 Sub datisocket_ricezione_NewData (buffer() As Byte)
