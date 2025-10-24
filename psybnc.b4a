@@ -1,0 +1,93 @@
+﻿Version=6.5
+NumberOfModules=1
+Module1=psy
+Build1=Default,psybnc.pack
+ManifestCode=
+IconFile=
+NumberOfFiles=1
+File1=frmprincipale.bal
+NumberOfLibraries=4
+Library1=core
+Library2=network
+Library3=randomaccessfile
+Library4=jhwifi
+@EndOfDesignText@
+#Region Module Attributes
+	#FullScreen: False
+	#IncludeTitle: True
+	#ApplicationLabel: psybnc
+	#VersionCode: 1
+	#VersionName: 
+	#SupportedOrientations: unspecified
+	#CanInstallToExternalStorage: False
+#End Region
+
+'Activity module
+Sub Process_Globals
+	'These global variables will be declared once when the application starts.
+	'These variables can be accessed from all modules.
+
+End Sub
+
+Sub Globals
+	'These global variables will be redeclared each time the activity is created.
+	'These variables can only be accessed from this module.
+
+	Dim Button1 As Button
+	Dim Button2 As Button
+	
+	Dim EditText1 As EditText
+	Dim EditText2 As EditText
+	Dim TimerIP As Timer
+ 
+End Sub
+
+Sub Activity_Create(FirstTime As Boolean)
+ Activity.LoadLayout("frmprincipale")
+End Sub
+
+
+
+
+
+
+
+
+
+
+Sub Button1_Click
+    If psy.statesocket == False Then
+	
+		'SE ATTIVO IL WIFI
+		Dim Wifi As JhWifi
+		Wifi.Initialize 
+		If Wifi.Enabled = True Then
+			If Wifi.Wifi_Sleep_Policy < 2 Then
+				'DISATTIVA LO SLEEP
+			 	Wifi.Wifi_Sleep_Policy = Wifi.WIFI_SLEEP_POLICY_NEVER
+			End If
+		End If
+		'LETTURA DELLA PORTA
+		psy.serverPort = EditText1.text
+		StartService(psy)
+		TimerIP.Initialize("TimerIP", 100)
+		TimerIP.Enabled = True
+		EditText2.Text = psy.MyIP
+	End If
+End Sub
+ 
+Sub TimerIP_Tick
+   If EditText2.Text =="" Then
+   		EditText2.Text = psy.MyIP
+   		TimerIP.Enabled = False
+   End If
+End Sub
+Sub Button2_Click
+		EditText2.Text = psy.MyIP
+End Sub
+ 
+
+Sub Button3_Click
+
+ 
+End Sub

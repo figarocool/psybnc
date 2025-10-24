@@ -1,0 +1,124 @@
+﻿Version=2.22
+IconFile=
+FullScreen=False
+IncludeTitle=True
+NumberOfModules=0
+Package=b4a.example
+Label=B4A Example
+VersionCode=1
+VersionString=
+Orientation=unspecified
+CanInstallToExternalStorage=False
+DoNotOverwriteManifest=False
+ManifestCode='This code will be applied to the manifest file during compilation.~\n~'You do not need to modify it in most cases.~\n~'See this link for for more information: http://www.basic4ppc.com/forum/showthread.php?p=78136~\n~AddManifestText(~\n~<uses-sdk android:minSdkVersion="4" android:targetSdkVersion="14"/>~\n~<supports-screens android:largeScreens="true" ~\n~    android:normalScreens="true" ~\n~    android:smallScreens="true" ~\n~    android:anyDensity="true"/>)~\n~SetApplicationAttribute(android:icon, "@drawable/icon")~\n~SetApplicationAttribute(android:label, "$LABEL$")~\n~'End of default text.~\n~
+NumberOfFiles=1
+File1=Main.bal
+NumberOfLibraries=5
+Library1=core
+Library2=jhwifi
+Library3=network
+Library4=phone
+Library5=randomaccessfile
+@EndOfDesignText@
+'Activity module
+Sub Process_Globals
+	'These global variables will be declared once when the application starts.
+	'These variables can be accessed from all modules.
+ 	Dim socket_invio_dati As Socket
+	Dim datisocket_ricezione_irc As AsyncStreams  
+ 
+End Sub
+
+Sub Globals
+	'These global variables will be redeclared each time the activity is created.
+	'These variables can only be accessed from this module.
+ 	 Dim EditText1 As EditText
+ 
+	Dim Connetti As Button
+End Sub
+
+Sub Activity_Create(FirstTime As Boolean)
+	'Do not forget to load the layout file created with the visual designer. For example:
+	Activity.LoadLayout("Main")
+	Dim Wifi As JhWifi
+	Wifi.Initialize 
+	'SE ATTIVO IL WIFI
+	If Wifi.Enabled = True Then
+		If Wifi.Wifi_Sleep_Policy < 2 Then
+			Msgbox("psybnc","Disattiva lo Sleep Wifi")
+			'DISATTIVA LO SLEEP
+		 	Wifi.Wifi_Sleep_Policy = Wifi.WIFI_SLEEP_POLICY_NEVER
+		End If
+	End If
+  
+  
+
+End Sub
+Sub Activity_Close
+
+End Sub
+
+Sub Activity_Resume
+
+End Sub
+Sub Activity_Pause (UserClosed As Boolean)
+    If UserClosed Then
+       Msgbox("ok","ok")
+    End If
+End Sub
+
+
+
+
+ 
+
+Sub socket_invio_dati_Connected (Successful As Boolean) 
+    If Successful = True Then
+		Dim tw As TextWriter
+		tw.Initialize(socket_invio_dati.OutputStream)
+		tw.WriteLine("CAP LS")
+		tw.Flush
+		tw.WriteLine("NICK TestXXNick"&Chr(13))
+		tw.Flush
+		tw.WriteLine("USER Sberla 0 * :..."&Chr(13))
+		tw.Flush
+		datisocket_ricezione_irc.Initialize(socket_invio_dati.InputStream, socket_invio_dati.OutputStream, "datisocket_ricezione_irc")	
+	End If
+End Sub
+
+Sub datisocket_ricezione_irc_NewData (buffer() As Byte)
+
+
+Dim BufferTExt As String 
+Dim tw As TextWriter
+
+BufferTExt = BytesToString(buffer, 0, buffer.Length, "UTF8") & Chr(13)
+
+'PING REPLY
+Dim PingString() As String
+PingString = Regex.Split(":",BufferTExt)
+If PingString(0) = "PING " Then
+	tw.Initialize(socket_invio_dati.OutputStream)
+	tw.WriteLine("PONG "&PingString(1)&Chr(13))
+	tw.Flush
+End If	
+
+' SCRIVE LA TEXTEDIT CON IL MOTD		
+EditText1.Text = EditText1.Text & BufferTExt
+End Sub
+
+
+Sub Button_Click
+	socket_invio_dati.Initialize("socket_invio_dati")
+	socket_invio_dati.Connect("irc.azzurra.org","6667",0)
+End Sub
+Sub Button1_Click
+		Dim tw As TextWriter
+		tw.Initialize(socket_invio_dati.OutputStream)
+		tw.WriteLine("JOIN #Arkosoft"&Chr(13))
+	tw.Flush
+End Sub
+Sub Button2_Click
+	EditText1.Text =""
+ 
+End Sub
