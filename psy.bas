@@ -790,10 +790,17 @@ Dim tw As TextWriter
 				Spacenick = Regex.Split(Chr(32),identIRC)
 				Solonick = Regex.Split(Chr(10),Spacenick(1))
 				Nickconnessione = Solonick(0)
-				' Entra e stamba il menu
-				Bhelp
-				joinpasswd = True
-				Return ""
+				' Autentica primo utente (admin di default)
+				If AuthenticateUser(Nickconnessione, "admin123") Then
+					SetUserOnline(Nickconnessione, True)
+					' Entra e stamba il menu
+					Bhelp
+					joinpasswd = True
+					Return ""
+				Else
+					WriteSocket(":-psyBNC PRIVMSG " & Nickconnessione & " Authentication failed. Please check your credentials.")
+					Return ""
+				End If
 			Else
 				'se sta già creato il file e controlla se esiste
 				Dim Linefile() As String 
@@ -802,8 +809,15 @@ Dim tw As TextWriter
 				onlypass = Regex.split(Chr(32),Linefile(2))
 				'controllo se le password sono uguali	
 					If onlypass(1) == readpasswd.SubString2(0,readpasswd.Length -1) Then
-						joinpasswd = True
-						QueryMSG
+						' Autentica utente con il nuovo sistema
+						If AuthenticateUser(Nickconnessione, readpasswd.SubString2(0,readpasswd.Length -1)) Then
+							joinpasswd = True
+							SetUserOnline(Nickconnessione, True)
+							QueryMSG
+						Else
+							WriteSocket(":-psyBNC PRIVMSG " & Nickconnessione & " Authentication failed. Please check your credentials.")
+							Return ""
+						End If
 						If Linefile.Length > 3 Then
 							'lettura del server dove connettersi in automatico
 							If socket_invio_dati.Connected = False Then
@@ -1050,7 +1064,7 @@ Dim tw As TextWriter
 		' ============================
 		' ADD USER
 		' ===================
-		If Read.ToUpperCase.Contains("ADDUSER") AND IRClient == True AND joinpasswd = True Then
+		If Read.ToUpperCase.Contains("ADDUSER") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
 			Dim UserLogin As String
 			Dim UserRealName As String
 			Dim CommandParts() As String
@@ -1073,7 +1087,7 @@ Dim tw As TextWriter
 		' ============================
 		' DELETE USER
 		' ===================
-		If Read.ToUpperCase.Contains("DELUSER") AND IRClient == True AND joinpasswd = True Then
+		If Read.ToUpperCase.Contains("DELUSER") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
 			Dim UserLogin As String
 			UserLogin = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
 			
@@ -1114,7 +1128,7 @@ Dim tw As TextWriter
 		' ============================
 		' MAKE ADMIN
 		' ===================
-		If Read.ToUpperCase.Contains("MADMIN") AND IRClient == True AND joinpasswd = True Then
+		If Read.ToUpperCase.Contains("MADMIN") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
 			Dim UserLogin As String
 			UserLogin = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
 			
@@ -1132,7 +1146,7 @@ Dim tw As TextWriter
 		' ============================
 		' REMOVE ADMIN
 		' ===================
-		If Read.ToUpperCase.Contains("UNADMIN") AND IRClient == True AND joinpasswd = True Then
+		If Read.ToUpperCase.Contains("UNADMIN") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
 			Dim UserLogin As String
 			UserLogin = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
 			
@@ -1159,7 +1173,7 @@ Dim tw As TextWriter
 		' ============================
 		' KILL USER
 		' ===================
-		If Read.ToUpperCase.Contains("BKILL") AND IRClient == True AND joinpasswd = True Then
+		If Read.ToUpperCase.Contains("BKILL") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
 			Dim UserLogin As String
 			UserLogin = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
 			
@@ -1202,6 +1216,8 @@ Dim tw As TextWriter
 				'CHIUDE IL CLIENT
 				NormalNick = Nickconnessione
 				WriteSocketIrc("nick "&AwayNick)
+				' Disconnetti utente dal sistema
+				SetUserOnline(Nickconnessione, False)
 				IRClient = False
 				joinpasswd = False
 			End If	
@@ -1471,6 +1487,24 @@ Sub JoinDCCAllowedTypes() As String
 	Next
 	
 	Return Result
+End Sub
+
+Sub GetDCCConfig() As String
+	' Restituisce la configurazione DCC come stringa
+	Try
+		Dim Config As String
+		Config = "DCC Mode: " & DCCMode & Chr(10)
+		Config = Config & "Auto Accept: " & DCCAutoAccept & Chr(10)
+		Config = Config & "Max File Size: " & DCCMaxFileSize & " bytes" & Chr(10)
+		Config = Config & "Allowed Types: " & JoinDCCAllowedTypes() & Chr(10)
+		Config = Config & "DCC Port: " & DCCPort
+		
+		Return Config
+		
+	Catch Error As Exception
+		LogError("GET_DCC_CONFIG_ERROR", Error.Message, "GetDCCConfig")
+		Return "Error retrieving DCC configuration"
+	End Try
 End Sub
 
 ' ======================
@@ -2065,7 +2099,13 @@ Sub SetUserOnline(Login As String, Online As Boolean)
 			UserOnline.Put(Login, False)
 		End If
 		
-		LogInfo("User " & Login & " status: " & IIf(Online, "ONLINE", "OFFLINE"), "SetUserOnline")
+		Dim StatusText As String
+		If Online Then
+			StatusText = "ONLINE"
+		Else
+			StatusText = "OFFLINE"
+		End If
+		LogInfo("User " & Login & " status: " & StatusText, "SetUserOnline")
 		
 	Catch Error As Exception
 		LogError("SET_ONLINE_ERROR", Error.Message, "SetUserOnline")
@@ -2116,8 +2156,21 @@ Sub GetUserInfo(Login As String) As String
 		Dim Info As String
 		Info = "User: " & Login & Chr(10)
 		Info = Info & "Real Name: " & UserRealNames.Get(Login) & Chr(10)
-		Info = Info & "Status: " & IIf(IsUserOnline(Login), "ONLINE", "OFFLINE") & Chr(10)
-		Info = Info & "Admin: " & IIf(IsUserAdmin(Login), "YES", "NO") & Chr(10)
+		Dim StatusText As String
+		If IsUserOnline(Login) Then
+			StatusText = "ONLINE"
+		Else
+			StatusText = "OFFLINE"
+		End If
+		Info = Info & "Status: " & StatusText & Chr(10)
+		
+		Dim AdminText As String
+		If IsUserAdmin(Login) Then
+			AdminText = "YES"
+		Else
+			AdminText = "NO"
+		End If
+		Info = Info & "Admin: " & AdminText & Chr(10)
 		Info = Info & "Last Seen: " & UserLastSeen.Get(Login) & Chr(10)
 		Info = Info & "Login Attempts: " & UserLoginAttempts.Get(Login)
 		
