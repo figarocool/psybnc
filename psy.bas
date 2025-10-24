@@ -97,6 +97,19 @@ Dim DCCMaxFileSize As Long    ' Dimensione massima file (bytes)
 Dim DCCAllowedTypes As List   ' Tipi di file permessi
 
 ' ======================
+' DCC ADVANCED SUPPORT
+' ======================
+Dim DCCChatConnections As List  ' Connessioni chat DCC attive
+Dim DCCChatRequests As List     ' Richieste chat DCC in attesa
+Dim DCCSendQueue As List        ' Coda file da inviare
+Dim DCCActiveTransfers As List  ' Trasferimenti DCC attivi
+Dim DCCAutoGetUsers As List     ' Utenti con auto-get abilitato
+Dim DCCAutoGetNetworks As Map   ' Auto-get per network
+Dim DCCBotConnections As List   ' Connessioni bot DCC
+Dim DCCChatHistory As List      ' Storico chat DCC
+Dim MyIP As String              ' IP del bouncer per DCC
+
+' ======================
 ' ERROR HANDLING & LOGGING
 ' ======================
 Dim ErrorBuffer As List        ' Buffer errori in memoria
@@ -229,6 +242,19 @@ Sub Service_Start (StartingIntent As Intent)
 		DCCPort = 1024 + Rnd(0, 64511) ' Random port between 1024-65535
 		DCCServer.Initialize(DCCPort, "DCCServer")
 		DCCServer.Listen
+		
+		' ======================
+		' DCC ADVANCED INIT
+		' ======================
+		DCCChatConnections.Initialize
+		DCCChatRequests.Initialize
+		DCCSendQueue.Initialize
+		DCCActiveTransfers.Initialize
+		DCCAutoGetUsers.Initialize
+		DCCAutoGetNetworks.Initialize
+		DCCBotConnections.Initialize
+		DCCChatHistory.Initialize
+		MyIP = "127.0.0.1"           ' Default localhost IP
 		
 		' ======================
 		' DCC DEFAULT CONFIG
@@ -855,9 +881,16 @@ Sub Bhelp()
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   PLAYPRIVATELOG  - Plays your Message Log")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   ERASEPRIVATELOG - Erases your Message Log")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DCCSTATUS       - Shows DCC connections status")
-	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DCCFILES        - Lists pending DCC files")
-	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DCCMODE         - Sets DCC mode (SAVE/FORWARD)")
-	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DCCCONFIG       - Shows DCC configuration")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DCCFILES       - Lists pending DCC files")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DCCMODE        - Sets DCC mode (SAVE/FORWARD)")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DCCCONFIG      - Shows DCC configuration")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DCCCHAT        - Starts DCC chat with user")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DCCANSWER       - Accepts DCC chat request")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DCCSENDME       - Sends file via DCC")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DCCGET          - Accepts DCC file offer")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DCCCANCEL       - Cancels DCC transfer")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   AUTOGETDCC      - Auto-accepts DCC files")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   LISTDCC        - Lists DCC connections")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   SSLCONFIG       - Shows SSL configuration")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   SSLENABLE       - Enables SSL support")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   SSLDISABLE      - Disables SSL support")
@@ -1642,6 +1675,177 @@ Dim tw As TextWriter
 			Return ""
 		End If
 		' ============================
+		' DCCCHAT COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("DCCCHAT") AND IRClient == True AND joinpasswd = True Then
+			Dim DCCChatUser As String
+			DCCChatUser = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If DCCChatUser.Length > 0 Then
+				If StartDCCChat(DCCChatUser) Then
+					WriteSocket(":-psyBNC PRIVMSG psyBNC DCC chat request sent to " & DCCChatUser)
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to start DCC chat with " & DCCChatUser)
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: DCCCHAT user")
+			End If
+			Return ""
+		End If
+		' ============================
+		' DCCANSWER COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("DCCANSWER") AND IRClient == True AND joinpasswd = True Then
+			Dim DCCAnswerUser As String
+			DCCAnswerUser = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If DCCAnswerUser.Length > 0 Then
+				If AnswerDCCChat(DCCAnswerUser) Then
+					WriteSocket(":-psyBNC PRIVMSG psyBNC DCC chat accepted with " & DCCAnswerUser)
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to accept DCC chat from " & DCCAnswerUser)
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: DCCANSWER user")
+			End If
+			Return ""
+		End If
+		' ============================
+		' DCCSENDME COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("DCCSENDME") AND IRClient == True AND joinpasswd = True Then
+			Dim DCCSendCommand As String
+			DCCSendCommand = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If DCCSendCommand.Length > 0 Then
+				Dim DCCSendParts() As String
+				DCCSendParts = DCCSendCommand.Split("'")
+				
+				If DCCSendParts.Length >= 2 Then
+					Dim DCCFileName As String
+					Dim DCCTargetUser As String
+					DCCFileName = DCCSendParts(0).Trim
+					DCCTargetUser = DCCSendParts(1).Trim
+					
+					If SendDCCFile(DCCFileName, DCCTargetUser) Then
+						WriteSocket(":-psyBNC PRIVMSG psyBNC DCC file offer sent: " & DCCFileName & " to " & DCCTargetUser)
+					Else
+						WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to send DCC file: " & DCCFileName)
+					End If
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: DCCSENDME filename'user")
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: DCCSENDME filename'user")
+			End If
+			Return ""
+		End If
+		' ============================
+		' DCCGET COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("DCCGET") AND IRClient == True AND joinpasswd = True Then
+			Dim DCCGetCommand As String
+			DCCGetCommand = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If DCCGetCommand.Length > 0 Then
+				Dim DCCGetParts() As String
+				DCCGetParts = DCCGetCommand.Split("'")
+				
+				If DCCGetParts.Length >= 2 Then
+					Dim DCCGetUser As String
+					Dim DCCGetFile As String
+					DCCGetUser = DCCGetParts(0).Trim
+					DCCGetFile = DCCGetParts(1).Trim
+					
+					If AcceptDCCFile(DCCGetFile, DCCGetUser) Then
+						WriteSocket(":-psyBNC PRIVMSG psyBNC DCC file accepted: " & DCCGetFile & " from " & DCCGetUser)
+					Else
+						WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to accept DCC file: " & DCCGetFile)
+					End If
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: DCCGET user'filename")
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: DCCGET user'filename")
+			End If
+			Return ""
+		End If
+		' ============================
+		' DCCCANCEL COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("DCCCANCEL") AND IRClient == True AND joinpasswd = True Then
+			Dim DCCCancelCommand As String
+			DCCCancelCommand = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If DCCCancelCommand.Length > 0 Then
+				Dim DCCCancelParts() As String
+				DCCCancelParts = DCCCancelCommand.Split("'")
+				
+				If DCCCancelParts.Length >= 1 Then
+					Dim DCCCancelUser As String
+					Dim DCCCancelFile As String
+					DCCCancelUser = DCCCancelParts(0).Trim
+					DCCCancelFile = ""
+					
+					If DCCCancelParts.Length >= 2 Then
+						DCCCancelFile = DCCCancelParts(1).Trim
+					End If
+					
+					If CancelDCCTransfer(DCCCancelUser, DCCCancelFile) Then
+						WriteSocket(":-psyBNC PRIVMSG psyBNC DCC transfer cancelled: " & DCCCancelUser & " " & DCCCancelFile)
+					Else
+						WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to cancel DCC transfer")
+					End If
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: DCCCANCEL user'filename")
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: DCCCANCEL user'filename")
+			End If
+			Return ""
+		End If
+		' ============================
+		' AUTOGETDCC COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("AUTOGETDCC") AND IRClient == True AND joinpasswd = True Then
+			Dim AutoGetCommand As String
+			AutoGetCommand = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If AutoGetCommand.Length > 0 Then
+				Dim AutoGetParts() As String
+				AutoGetParts = AutoGetCommand.Split("'")
+				
+				If AutoGetParts.Length >= 2 Then
+					Dim AutoGetUser As String
+					Dim AutoGetNetwork As String
+					Dim AutoGetEnable As Boolean
+					AutoGetUser = AutoGetParts(0).Trim
+					AutoGetNetwork = AutoGetParts(1).Trim
+					AutoGetEnable = True
+					
+					If SetAutoGetDCC(AutoGetUser, AutoGetNetwork, AutoGetEnable) Then
+						WriteSocket(":-psyBNC PRIVMSG psyBNC Auto-get DCC enabled for " & AutoGetUser & " on " & AutoGetNetwork)
+					Else
+						WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to enable auto-get DCC")
+					End If
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: AUTOGETDCC user'network")
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: AUTOGETDCC user'network")
+			End If
+			Return ""
+		End If
+		' ============================
+		' LISTDCC COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("LISTDCC") AND IRClient == True AND joinpasswd = True Then
+			Dim DCCList As String
+			DCCList = GetDCCConnectionsList()
+			WriteSocket(":-psyBNC PRIVMSG psyBNC " & DCCList)
+			Return ""
+		End If
+		' ============================
 		' SCRIVI SUL SOCKET
 		' SE NON FA IL COMANDO CLOSE
 		' ============================
@@ -2045,6 +2249,12 @@ Sub SaveCurrentState()
 		StateData.Put("MessageQuery", MessageQuery)
 		StateData.Put("DCCMode", DCCMode)
 		StateData.Put("DCCConfig", GetDCCConfig())
+		StateData.Put("DCCChatConnections", DCCChatConnections)
+		StateData.Put("DCCSendQueue", DCCSendQueue)
+		StateData.Put("DCCActiveTransfers", DCCActiveTransfers)
+		StateData.Put("DCCAutoGetUsers", DCCAutoGetUsers)
+		StateData.Put("DCCAutoGetNetworks", DCCAutoGetNetworks)
+		StateData.Put("MyIP", MyIP)
 		StateData.Put("SSLEnabled", SSLEnabled)
 		StateData.Put("SSLPort", SSLPort)
 		
@@ -3388,6 +3598,277 @@ Sub GetOpLevel(User As String) As Int
 	Catch Error As Exception
 		LogError("GET_OP_LEVEL_ERROR", Error.Message, "GetOpLevel")
 		Return 0
+	End Try
+End Sub
+
+' ======================
+' DCC ADVANCED FUNCTIONS
+' ======================
+
+Sub StartDCCChat(TargetUser As String) As Boolean
+	Try
+		' Controlla se chat DCC già attiva
+		If DCCChatConnections.IndexOf(TargetUser) <> -1 Then
+			LogError("DCC_CHAT_EXISTS", "DCC chat already active with " & TargetUser, "StartDCCChat")
+			Return False
+		End If
+		
+		' Aggiungi richiesta chat
+		Dim ChatRequest As Map
+		ChatRequest.Initialize
+		ChatRequest.Put("TargetUser", TargetUser)
+		ChatRequest.Put("Status", "Pending")
+		ChatRequest.Put("Timestamp", DateTime.Now)
+		
+		DCCChatRequests.Add(ChatRequest)
+		
+		' Invia richiesta chat DCC
+		Dim DCCChatMessage As String
+		DCCChatMessage = "PRIVMSG " & TargetUser & " :\x01DCC CHAT chat " & MyIP & " " & DCCPort & "\x01"
+		WriteSocketIrc(DCCChatMessage)
+		
+		LogInfo("DCC chat request sent to " & TargetUser, "StartDCCChat")
+		Return True
+		
+	Catch Error As Exception
+		LogError("DCC_CHAT_ERROR", Error.Message, "StartDCCChat")
+		Return False
+	End Try
+End Sub
+
+Sub AnswerDCCChat(TargetUser As String) As Boolean
+	Try
+		' Controlla se richiesta chat esiste
+		Dim ChatRequestFound As Boolean
+		ChatRequestFound = False
+		
+		For i = 0 To DCCChatRequests.Size - 1
+			Dim ChatRequest As Map
+			ChatRequest = DCCChatRequests.Get(i)
+			
+			If ChatRequest.Get("TargetUser") = TargetUser Then
+				' Accetta chat
+				ChatRequest.Put("Status", "Accepted")
+				DCCChatConnections.Add(TargetUser)
+				DCCChatRequests.RemoveAt(i)
+				ChatRequestFound = True
+				Exit
+			End If
+		Next
+		
+		If ChatRequestFound = False Then
+			LogError("DCC_CHAT_NOT_FOUND", "No DCC chat request from " & TargetUser, "AnswerDCCChat")
+			Return False
+		End If
+		
+		' Invia risposta chat DCC
+		Dim DCCChatMessage As String
+		DCCChatMessage = "PRIVMSG " & TargetUser & " :\x01DCC CHAT chat " & MyIP & " " & DCCPort & "\x01"
+		WriteSocketIrc(DCCChatMessage)
+		
+		LogInfo("DCC chat accepted with " & TargetUser, "AnswerDCCChat")
+		Return True
+		
+	Catch Error As Exception
+		LogError("DCC_ANSWER_ERROR", Error.Message, "AnswerDCCChat")
+		Return False
+	End Try
+End Sub
+
+Sub SendDCCFile(FileName As String, TargetUser As String) As Boolean
+	Try
+		' Controlla se file esiste
+		If File.Exists(File.DirInternal, FileName) = False Then
+			LogError("DCC_FILE_NOT_FOUND", "File not found: " & FileName, "SendDCCFile")
+			Return False
+		End If
+		
+		' Ottieni dimensione file
+		Dim FileSize As Long
+		FileSize = File.Size(File.DirInternal, FileName)
+		
+		' Aggiungi alla coda invio
+		Dim SendItem As Map
+		SendItem.Initialize
+		SendItem.Put("FileName", FileName)
+		SendItem.Put("TargetUser", TargetUser)
+		SendItem.Put("FileSize", FileSize)
+		SendItem.Put("Status", "Pending")
+		SendItem.Put("Timestamp", DateTime.Now)
+		
+		DCCSendQueue.Add(SendItem)
+		
+		' Invia offerta file DCC
+		Dim DCCSendMessage As String
+		DCCSendMessage = "PRIVMSG " & TargetUser & " :\x01DCC SEND " & FileName & " " & FileSize & " " & DCCPort & "\x01"
+		WriteSocketIrc(DCCSendMessage)
+		
+		LogInfo("DCC file offer sent: " & FileName & " to " & TargetUser, "SendDCCFile")
+		Return True
+		
+	Catch Error As Exception
+		LogError("DCC_SEND_ERROR", Error.Message, "SendDCCFile")
+		Return False
+	End Try
+End Sub
+
+Sub AcceptDCCFile(FileName As String, TargetUser As String) As Boolean
+	Try
+		' Controlla se offerta file esiste
+		Dim FileOfferFound As Boolean
+		FileOfferFound = False
+		
+		For i = 0 To DCCFiles.Size - 1
+			Dim DCCFile As Map
+			DCCFile = DCCFiles.Get(i)
+			
+			If DCCFile.Get("FileName") = FileName And DCCFile.Get("TargetUser") = TargetUser Then
+				' Accetta file
+				DCCFile.Put("Status", "Accepted")
+				FileOfferFound = True
+				Exit
+			End If
+		Next
+		
+		If FileOfferFound = False Then
+			LogError("DCC_FILE_OFFER_NOT_FOUND", "No DCC file offer for " & FileName & " from " & TargetUser, "AcceptDCCFile")
+			Return False
+		End If
+		
+		' Invia accettazione file DCC
+		Dim DCCAcceptMessage As String
+		DCCAcceptMessage = "PRIVMSG " & TargetUser & " :\x01DCC ACCEPT " & FileName & " " & DCCPort & "\x01"
+		WriteSocketIrc(DCCAcceptMessage)
+		
+		LogInfo("DCC file accepted: " & FileName & " from " & TargetUser, "AcceptDCCFile")
+		Return True
+		
+	Catch Error As Exception
+		LogError("DCC_ACCEPT_ERROR", Error.Message, "AcceptDCCFile")
+		Return False
+	End Try
+End Sub
+
+Sub CancelDCCTransfer(TargetUser As String, FileName As String) As Boolean
+	Try
+		' Cancella trasferimento attivo
+		Dim TransferCancelled As Boolean
+		TransferCancelled = False
+		
+		' Cerca in trasferimenti attivi
+		For i = 0 To DCCActiveTransfers.Size - 1
+			Dim Transfer As Map
+			Transfer = DCCActiveTransfers.Get(i)
+			
+			If Transfer.Get("TargetUser") = TargetUser And (FileName.Length = 0 Or Transfer.Get("FileName") = FileName) Then
+				Transfer.Put("Status", "Cancelled")
+				DCCActiveTransfers.RemoveAt(i)
+				TransferCancelled = True
+				Exit
+			End If
+		Next
+		
+		' Cerca in coda invio
+		If TransferCancelled = False Then
+			For i = 0 To DCCSendQueue.Size - 1
+				Dim SendItem As Map
+				SendItem = DCCSendQueue.Get(i)
+				
+				If SendItem.Get("TargetUser") = TargetUser And (FileName.Length = 0 Or SendItem.Get("FileName") = FileName) Then
+					SendItem.Put("Status", "Cancelled")
+					DCCSendQueue.RemoveAt(i)
+					TransferCancelled = True
+					Exit
+				End If
+			Next
+		End If
+		
+		If TransferCancelled = False Then
+			LogError("DCC_TRANSFER_NOT_FOUND", "No DCC transfer found for " & TargetUser & " " & FileName, "CancelDCCTransfer")
+			Return False
+		End If
+		
+		LogInfo("DCC transfer cancelled: " & TargetUser & " " & FileName, "CancelDCCTransfer")
+		Return True
+		
+	Catch Error As Exception
+		LogError("DCC_CANCEL_ERROR", Error.Message, "CancelDCCTransfer")
+		Return False
+	End Try
+End Sub
+
+Sub SetAutoGetDCC(User As String, Network As String, Enable As Boolean) As Boolean
+	Try
+		If Enable Then
+			' Abilita auto-get
+			If DCCAutoGetUsers.IndexOf(User) = -1 Then
+				DCCAutoGetUsers.Add(User)
+			End If
+			
+			If Network.Length > 0 Then
+				DCCAutoGetNetworks.Put(User, Network)
+			End If
+			
+			LogInfo("Auto-get DCC enabled for " & User & " on " & Network, "SetAutoGetDCC")
+		Else
+			' Disabilita auto-get
+			If DCCAutoGetUsers.IndexOf(User) <> -1 Then
+				DCCAutoGetUsers.RemoveAt(DCCAutoGetUsers.IndexOf(User))
+			End If
+			
+			DCCAutoGetNetworks.Remove(User)
+			
+			LogInfo("Auto-get DCC disabled for " & User, "SetAutoGetDCC")
+		End If
+		
+		Return True
+		
+	Catch Error As Exception
+		LogError("AUTO_GET_DCC_ERROR", Error.Message, "SetAutoGetDCC")
+		Return False
+	End Try
+End Sub
+
+Sub GetDCCConnectionsList() As String
+	Try
+		Dim Result As String
+		Result = "DCC Connections:" & Chr(10)
+		
+		' Chat connections
+		If DCCChatConnections.Size > 0 Then
+			Result = Result & "Chat: " & DCCChatConnections.Size & " active" & Chr(10)
+			For i = 0 To DCCChatConnections.Size - 1
+				Result = Result & "  - " & DCCChatConnections.Get(i) & Chr(10)
+			Next
+		End If
+		
+		' Active transfers
+		If DCCActiveTransfers.Size > 0 Then
+			Result = Result & "Transfers: " & DCCActiveTransfers.Size & " active" & Chr(10)
+			For i = 0 To DCCActiveTransfers.Size - 1
+				Dim Transfer As Map
+				Transfer = DCCActiveTransfers.Get(i)
+				Result = Result & "  - " & Transfer.Get("TargetUser") & " (" & Transfer.Get("FileName") & ")" & Chr(10)
+			Next
+		End If
+		
+		' Bot connections
+		If DCCBotConnections.Size > 0 Then
+			Result = Result & "Bots: " & DCCBotConnections.Size & " connected" & Chr(10)
+			For i = 0 To DCCBotConnections.Size - 1
+				Result = Result & "  - " & DCCBotConnections.Get(i) & Chr(10)
+			Next
+		End If
+		
+		If DCCChatConnections.Size = 0 And DCCActiveTransfers.Size = 0 And DCCBotConnections.Size = 0 Then
+			Result = Result & "No active DCC connections."
+		End If
+		
+		Return Result
+		
+	Catch Error As Exception
+		LogError("GET_DCC_LIST_ERROR", Error.Message, "GetDCCConnectionsList")
+		Return "Error retrieving DCC connections list"
 	End Try
 End Sub
 
