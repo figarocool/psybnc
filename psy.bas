@@ -113,6 +113,18 @@ Dim SSLPort As Int            ' Porta SSL
 Dim SSLCertificate As String  ' Certificato SSL
 Dim SSLKey As String          ' Chiave SSL
 
+' ======================
+' USER MANAGEMENT
+' ======================
+Dim UsersList As List          ' Lista utenti
+Dim UserPasswords As Map       ' Password utenti
+Dim UserRealNames As Map       ' Real names utenti
+Dim UserAdmins As List          ' Lista admin
+Dim UserOnline As Map           ' Utenti online
+Dim UserLastSeen As Map         ' Ultimo accesso utenti
+Dim UserLoginAttempts As Map      ' Tentativi login
+Dim MaxLoginAttempts As Int     ' Massimo tentativi login
+
 End Sub
 Sub Service_Create
 'TimerService.Initialize("TimerService",1000)
@@ -173,6 +185,21 @@ Sub Service_Start (StartingIntent As Intent)
 		SSLPort = 6697                ' Porta SSL standard IRC
 		SSLCertificate = ""
 		SSLKey = ""
+		
+		' ======================
+		' USER MANAGEMENT INIT
+		' ======================
+		UsersList.Initialize
+		UserPasswords.Initialize
+		UserRealNames.Initialize
+		UserAdmins.Initialize
+		UserOnline.Initialize
+		UserLastSeen.Initialize
+		UserLoginAttempts.Initialize
+		MaxLoginAttempts = 3
+		
+		' Crea utente admin di default
+		CreateDefaultAdmin()
 		
 		' ======================
 		' START SYSTEMS
@@ -703,6 +730,14 @@ Sub Bhelp()
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   HEARTBEATSTOP   - Stops heartbeat monitoring")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   SAVESTATE       - Saves current state")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   LOADSTATE       - Loads saved state")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   ADDUSER        - Adds a new user")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DELUSER         - Deletes a user")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   PASSWORD       - Changes user password")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   MADMIN         - Makes user admin")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   UNADMIN         - Removes admin rights")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   BWHO           - Lists all users")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   BKILL          - Kills user connection")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   USERINFO       - Shows user information")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   BHELP           - Lists this help OR help on a topic")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP Use /QUOTE bhelp <command> For details.")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP - End of help")
@@ -1010,6 +1045,149 @@ Dim tw As TextWriter
 		If Read.ToUpperCase.Contains("LOADSTATE") AND IRClient == True AND joinpasswd = True Then
 			LoadSavedState()
 			WriteSocket(":-psyBNC PRIVMSG psyBNC State loaded successfully")
+			Return ""
+		End If
+		' ============================
+		' ADD USER
+		' ===================
+		If Read.ToUpperCase.Contains("ADDUSER") AND IRClient == True AND joinpasswd = True Then
+			Dim UserLogin As String
+			Dim UserRealName As String
+			Dim CommandParts() As String
+			CommandParts = TogliPrimoComando(Read).Replace(Chr(10),"").Split(":")
+			
+			If CommandParts.Length >= 2 Then
+				UserLogin = CommandParts(0).Trim
+				UserRealName = CommandParts(1).Trim
+				
+				If AddUser(UserLogin, UserRealName) Then
+					WriteSocket(":-psyBNC PRIVMSG psyBNC User added successfully: " & UserLogin)
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to add user: " & UserLogin)
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: ADDUSER login :realname")
+			End If
+			Return ""
+		End If
+		' ============================
+		' DELETE USER
+		' ===================
+		If Read.ToUpperCase.Contains("DELUSER") AND IRClient == True AND joinpasswd = True Then
+			Dim UserLogin As String
+			UserLogin = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If UserLogin.Length > 0 Then
+				If DeleteUser(UserLogin) Then
+					WriteSocket(":-psyBNC PRIVMSG psyBNC User deleted successfully: " & UserLogin)
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to delete user: " & UserLogin)
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: DELUSER login")
+			End If
+			Return ""
+		End If
+		' ============================
+		' CHANGE PASSWORD
+		' ===================
+		If Read.ToUpperCase.Contains("PASSWORD") AND IRClient == True AND joinpasswd = True Then
+			Dim UserLogin As String
+			Dim NewPassword As String
+			Dim CommandParts() As String
+			CommandParts = TogliPrimoComando(Read).Replace(Chr(10),"").Split(":")
+			
+			If CommandParts.Length >= 2 Then
+				UserLogin = CommandParts(0).Trim
+				NewPassword = CommandParts(1).Trim
+				
+				If ChangePassword(UserLogin, NewPassword) Then
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Password changed successfully for user: " & UserLogin)
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to change password for user: " & UserLogin)
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: PASSWORD login :newpassword")
+			End If
+			Return ""
+		End If
+		' ============================
+		' MAKE ADMIN
+		' ===================
+		If Read.ToUpperCase.Contains("MADMIN") AND IRClient == True AND joinpasswd = True Then
+			Dim UserLogin As String
+			UserLogin = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If UserLogin.Length > 0 Then
+				If MakeAdmin(UserLogin) Then
+					WriteSocket(":-psyBNC PRIVMSG psyBNC User promoted to admin: " & UserLogin)
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to promote user to admin: " & UserLogin)
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: MADMIN login")
+			End If
+			Return ""
+		End If
+		' ============================
+		' REMOVE ADMIN
+		' ===================
+		If Read.ToUpperCase.Contains("UNADMIN") AND IRClient == True AND joinpasswd = True Then
+			Dim UserLogin As String
+			UserLogin = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If UserLogin.Length > 0 Then
+				If RemoveAdmin(UserLogin) Then
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Admin rights removed from user: " & UserLogin)
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to remove admin rights from user: " & UserLogin)
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: UNADMIN login")
+			End If
+			Return ""
+		End If
+		' ============================
+		' LIST USERS (BWHO)
+		' ===================
+		If Read.ToUpperCase.Contains("BWHO") AND IRClient == True AND joinpasswd = True Then
+			Dim UserList As String
+			UserList = GetUserList()
+			WriteSocket(":-psyBNC PRIVMSG psyBNC Users: " & UserList)
+			Return ""
+		End If
+		' ============================
+		' KILL USER
+		' ===================
+		If Read.ToUpperCase.Contains("BKILL") AND IRClient == True AND joinpasswd = True Then
+			Dim UserLogin As String
+			UserLogin = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If UserLogin.Length > 0 Then
+				If KillUser(UserLogin) Then
+					WriteSocket(":-psyBNC PRIVMSG psyBNC User killed: " & UserLogin)
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to kill user: " & UserLogin)
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: BKILL login")
+			End If
+			Return ""
+		End If
+		' ============================
+		' USER INFO
+		' ===================
+		If Read.ToUpperCase.Contains("USERINFO") AND IRClient == True AND joinpasswd = True Then
+			Dim UserLogin As String
+			UserLogin = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If UserLogin.Length > 0 Then
+				Dim UserInfo As String
+				UserInfo = GetUserInfo(UserLogin)
+				WriteSocket(":-psyBNC PRIVMSG psyBNC " & UserInfo)
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: USERINFO login")
+			End If
 			Return ""
 		End If
 		' ============================
@@ -1399,6 +1577,14 @@ Sub SaveCurrentState()
 		StateData.Put("SSLEnabled", SSLEnabled)
 		StateData.Put("SSLPort", SSLPort)
 		
+		' Salva dati utenti
+		StateData.Put("UsersList", UsersList)
+		StateData.Put("UserPasswords", UserPasswords)
+		StateData.Put("UserRealNames", UserRealNames)
+		StateData.Put("UserAdmins", UserAdmins)
+		StateData.Put("UserOnline", UserOnline)
+		StateData.Put("UserLastSeen", UserLastSeen)
+		
 		' Salva su file
 		Dim Writer As TextWriter
 		Writer.Initialize(File.OpenOutput(File.DirInternal, "psybnc_state_backup.txt", False))
@@ -1673,6 +1859,335 @@ Sub HandleServerDisconnection()
 		' Tentativo riconnessione
 		HandleConnectionError()
 		
+	End Try
+End Sub
+
+' ======================
+' USER MANAGEMENT FUNCTIONS
+' ======================
+
+Sub CreateDefaultAdmin()
+	Try
+		' Crea utente admin di default
+		Dim AdminUser As String
+		AdminUser = "admin"
+		
+		' Aggiungi alla lista utenti
+		If UsersList.IndexOf(AdminUser) = -1 Then
+			UsersList.Add(AdminUser)
+		End If
+		
+		' Imposta password di default
+		UserPasswords.Put(AdminUser, "admin123")
+		
+		' Imposta real name
+		UserRealNames.Put(AdminUser, "psyBNC Android Administrator")
+		
+		' Aggiungi alla lista admin
+		If UserAdmins.IndexOf(AdminUser) = -1 Then
+			UserAdmins.Add(AdminUser)
+		End If
+		
+		LogInfo("Default admin user created: " & AdminUser, "CreateDefaultAdmin")
+		
+	Catch Error As Exception
+		LogError("CREATE_ADMIN_ERROR", Error.Message, "CreateDefaultAdmin")
+	End Try
+End Sub
+
+Sub AddUser(Login As String, RealName As String) As Boolean
+	Try
+		' Controlla se utente esiste già
+		If UsersList.IndexOf(Login) <> -1 Then
+			LogError("USER_EXISTS", "User already exists: " & Login, "AddUser")
+			Return False
+		End If
+		
+		' Controlla limite utenti (max 99 come originale)
+		If UsersList.Size >= 99 Then
+			LogError("USER_LIMIT_EXCEEDED", "Maximum users limit reached (99)", "AddUser")
+			Return False
+		End If
+		
+		' Aggiungi utente
+		UsersList.Add(Login)
+		UserPasswords.Put(Login, "password123") ' Password di default
+		UserRealNames.Put(Login, RealName)
+		UserLastSeen.Put(Login, DateTime.Now)
+		UserLoginAttempts.Put(Login, 0)
+		
+		LogInfo("User added: " & Login & " (" & RealName & ")", "AddUser")
+		Return True
+		
+	Catch Error As Exception
+		LogError("ADD_USER_ERROR", Error.Message, "AddUser")
+		Return False
+	End Try
+End Sub
+
+Sub DeleteUser(Login As String) As Boolean
+	Try
+		' Controlla se utente esiste
+		If UsersList.IndexOf(Login) = -1 Then
+			LogError("USER_NOT_FOUND", "User not found: " & Login, "DeleteUser")
+			Return False
+		End If
+		
+		' Non permettere di cancellare l'ultimo admin
+		If UserAdmins.IndexOf(Login) <> -1 And UserAdmins.Size = 1 Then
+			LogError("LAST_ADMIN", "Cannot delete last admin user", "DeleteUser")
+			Return False
+		End If
+		
+		' Rimuovi utente
+		UsersList.RemoveAt(UsersList.IndexOf(Login))
+		UserPasswords.Remove(Login)
+		UserRealNames.Remove(Login)
+		UserOnline.Remove(Login)
+		UserLastSeen.Remove(Login)
+		UserLoginAttempts.Remove(Login)
+		
+		' Rimuovi da admin se presente
+		If UserAdmins.IndexOf(Login) <> -1 Then
+			UserAdmins.RemoveAt(UserAdmins.IndexOf(Login))
+		End If
+		
+		LogInfo("User deleted: " & Login, "DeleteUser")
+		Return True
+		
+	Catch Error As Exception
+		LogError("DELETE_USER_ERROR", Error.Message, "DeleteUser")
+		Return False
+	End Try
+End Sub
+
+Sub ChangePassword(Login As String, NewPassword As String) As Boolean
+	Try
+		' Controlla se utente esiste
+		If UsersList.IndexOf(Login) = -1 Then
+			LogError("USER_NOT_FOUND", "User not found: " & Login, "ChangePassword")
+			Return False
+		End If
+		
+		' Cambia password
+		UserPasswords.Put(Login, NewPassword)
+		
+		' Reset tentativi login
+		UserLoginAttempts.Put(Login, 0)
+		
+		LogInfo("Password changed for user: " & Login, "ChangePassword")
+		Return True
+		
+	Catch Error As Exception
+		LogError("CHANGE_PASSWORD_ERROR", Error.Message, "ChangePassword")
+		Return False
+	End Try
+End Sub
+
+Sub MakeAdmin(Login As String) As Boolean
+	Try
+		' Controlla se utente esiste
+		If UsersList.IndexOf(Login) = -1 Then
+			LogError("USER_NOT_FOUND", "User not found: " & Login, "MakeAdmin")
+			Return False
+		End If
+		
+		' Aggiungi alla lista admin
+		If UserAdmins.IndexOf(Login) = -1 Then
+			UserAdmins.Add(Login)
+			LogInfo("User promoted to admin: " & Login, "MakeAdmin")
+			Return True
+		Else
+			LogError("ALREADY_ADMIN", "User is already admin: " & Login, "MakeAdmin")
+			Return False
+		End If
+		
+	Catch Error As Exception
+		LogError("MAKE_ADMIN_ERROR", Error.Message, "MakeAdmin")
+		Return False
+	End Try
+End Sub
+
+Sub RemoveAdmin(Login As String) As Boolean
+	Try
+		' Controlla se utente esiste
+		If UsersList.IndexOf(Login) = -1 Then
+			LogError("USER_NOT_FOUND", "User not found: " & Login, "RemoveAdmin")
+			Return False
+		End If
+		
+		' Non permettere di rimuovere l'ultimo admin
+		If UserAdmins.IndexOf(Login) <> -1 And UserAdmins.Size = 1 Then
+			LogError("LAST_ADMIN", "Cannot remove last admin user", "RemoveAdmin")
+			Return False
+		End If
+		
+		' Rimuovi da admin
+		If UserAdmins.IndexOf(Login) <> -1 Then
+			UserAdmins.RemoveAt(UserAdmins.IndexOf(Login))
+			LogInfo("Admin rights removed from user: " & Login, "RemoveAdmin")
+			Return True
+		Else
+			LogError("NOT_ADMIN", "User is not admin: " & Login, "RemoveAdmin")
+			Return False
+		End If
+		
+	Catch Error As Exception
+		LogError("REMOVE_ADMIN_ERROR", Error.Message, "RemoveAdmin")
+		Return False
+	End Try
+End Sub
+
+Sub IsUserAdmin(Login As String) As Boolean
+	Try
+		Return UserAdmins.IndexOf(Login) <> -1
+	Catch Error As Exception
+		LogError("IS_ADMIN_ERROR", Error.Message, "IsUserAdmin")
+		Return False
+	End Try
+End Sub
+
+Sub IsUserOnline(Login As String) As Boolean
+	Try
+		Return UserOnline.ContainsKey(Login) And UserOnline.Get(Login) = True
+	Catch Error As Exception
+		LogError("IS_ONLINE_ERROR", Error.Message, "IsUserOnline")
+		Return False
+	End Try
+End Sub
+
+Sub SetUserOnline(Login As String, Online As Boolean)
+	Try
+		If Online Then
+			UserOnline.Put(Login, True)
+			UserLastSeen.Put(Login, DateTime.Now)
+		Else
+			UserOnline.Put(Login, False)
+		End If
+		
+		LogInfo("User " & Login & " status: " & IIf(Online, "ONLINE", "OFFLINE"), "SetUserOnline")
+		
+	Catch Error As Exception
+		LogError("SET_ONLINE_ERROR", Error.Message, "SetUserOnline")
+	End Try
+End Sub
+
+Sub GetUserList() As String
+	Try
+		Dim Result As String
+		Result = ""
+		
+		For i = 0 To UsersList.Size - 1
+			Dim User As String
+			User = UsersList.Get(i)
+			
+			Dim Status As String
+			If IsUserOnline(User) Then
+				Status = "*" & User
+			Else
+				Status = User
+			End If
+			
+			If IsUserAdmin(User) Then
+				Status = Status & " (Admin)"
+			End If
+			
+			If i = 0 Then
+				Result = Status
+			Else
+				Result = Result & ", " & Status
+			End If
+		Next
+		
+		Return Result
+		
+	Catch Error As Exception
+		LogError("GET_USER_LIST_ERROR", Error.Message, "GetUserList")
+		Return "Error retrieving user list"
+	End Try
+End Sub
+
+Sub GetUserInfo(Login As String) As String
+	Try
+		If UsersList.IndexOf(Login) = -1 Then
+			Return "User not found: " & Login
+		End If
+		
+		Dim Info As String
+		Info = "User: " & Login & Chr(10)
+		Info = Info & "Real Name: " & UserRealNames.Get(Login) & Chr(10)
+		Info = Info & "Status: " & IIf(IsUserOnline(Login), "ONLINE", "OFFLINE") & Chr(10)
+		Info = Info & "Admin: " & IIf(IsUserAdmin(Login), "YES", "NO") & Chr(10)
+		Info = Info & "Last Seen: " & UserLastSeen.Get(Login) & Chr(10)
+		Info = Info & "Login Attempts: " & UserLoginAttempts.Get(Login)
+		
+		Return Info
+		
+	Catch Error As Exception
+		LogError("GET_USER_INFO_ERROR", Error.Message, "GetUserInfo")
+		Return "Error retrieving user info"
+	End Try
+End Sub
+
+Sub KillUser(Login As String) As Boolean
+	Try
+		' Controlla se utente esiste
+		If UsersList.IndexOf(Login) = -1 Then
+			LogError("USER_NOT_FOUND", "User not found: " & Login, "KillUser")
+			Return False
+		End If
+		
+		' Disconnetti utente
+		SetUserOnline(Login, False)
+		
+		' Notifica utente se online
+		If IsUserOnline(Login) Then
+			WriteSocketSafe(":-psyBNC PRIVMSG " & Login & " Connection terminated by administrator")
+		End If
+		
+		LogInfo("User killed: " & Login, "KillUser")
+		Return True
+		
+	Catch Error As Exception
+		LogError("KILL_USER_ERROR", Error.Message, "KillUser")
+		Return False
+	End Try
+End Sub
+
+Sub AuthenticateUser(Login As String, Password As String) As Boolean
+	Try
+		' Controlla se utente esiste
+		If UsersList.IndexOf(Login) = -1 Then
+			LogError("USER_NOT_FOUND", "User not found: " & Login, "AuthenticateUser")
+			Return False
+		End If
+		
+		' Controlla tentativi login
+		Dim Attempts As Int
+		Attempts = UserLoginAttempts.Get(Login)
+		
+		If Attempts >= MaxLoginAttempts Then
+			LogError("MAX_LOGIN_ATTEMPTS", "Maximum login attempts exceeded for user: " & Login, "AuthenticateUser")
+			Return False
+		End If
+		
+		' Controlla password
+		If UserPasswords.Get(Login) = Password Then
+			' Login successful
+			UserLoginAttempts.Put(Login, 0)
+			SetUserOnline(Login, True)
+			LogInfo("User authenticated: " & Login, "AuthenticateUser")
+			Return True
+		Else
+			' Login failed
+			UserLoginAttempts.Put(Login, Attempts + 1)
+			LogError("LOGIN_FAILED", "Login failed for user: " & Login & " (attempt " & (Attempts + 1) & ")", "AuthenticateUser")
+			Return False
+		End If
+		
+	Catch Error As Exception
+		LogError("AUTHENTICATE_ERROR", Error.Message, "AuthenticateUser")
+		Return False
 	End Try
 End Sub
 
