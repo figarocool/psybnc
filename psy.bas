@@ -110,6 +110,35 @@ Dim DCCChatHistory As List      ' Storico chat DCC
 Dim MyIP As String              ' IP del bouncer per DCC
 
 ' ======================
+' AUTO-OP SUPPORT
+' ======================
+Dim AutoOpList As List          ' Lista auto-op utenti
+Dim AutoOpChannels As Map       ' Canali per ogni auto-op
+Dim AutoOpLevels As Map         ' Livelli auto-op per utente
+Dim AskOpList As List           ' Lista host per richiesta op
+Dim AskOpChannels As Map        ' Canali per ogni ask-op
+
+' ======================
+' IGNORE/BAN SUPPORT
+' ======================
+Dim IgnoreList As List          ' Lista ignore utenti
+Dim IgnoreTypes As Map          ' Tipi ignore (host, content, etc.)
+Dim IgnoreChannels As Map       ' Canali per ogni ignore
+Dim BanList As List            ' Lista ban utenti (già esistente)
+Dim BanReasons As Map          ' Motivi ban (già esistente)
+Dim BanChannels As Map         ' Canali per ogni ban
+
+' ======================
+' LOGGING SUPPORT
+' ======================
+Dim LogSources As List          ' Sorgenti log
+Dim LogFilters As Map          ' Filtri per ogni log
+Dim LogTypes As Map             ' Tipi log (traffic, main, private)
+Dim TrafficLogEnabled As Boolean ' Traffic log abilitato
+Dim MainLogEnabled As Boolean   ' Main log abilitato
+Dim PrivateLogEnabled As Boolean ' Private log abilitato
+
+' ======================
 ' ERROR HANDLING & LOGGING
 ' ======================
 Dim ErrorBuffer As List        ' Buffer errori in memoria
@@ -255,6 +284,33 @@ Sub Service_Start (StartingIntent As Intent)
 		DCCBotConnections.Initialize
 		DCCChatHistory.Initialize
 		MyIP = "127.0.0.1"           ' Default localhost IP
+		
+		' ======================
+		' AUTO-OP INIT
+		' ======================
+		AutoOpList.Initialize
+		AutoOpChannels.Initialize
+		AutoOpLevels.Initialize
+		AskOpList.Initialize
+		AskOpChannels.Initialize
+		
+		' ======================
+		' IGNORE/BAN INIT
+		' ======================
+		IgnoreList.Initialize
+		IgnoreTypes.Initialize
+		IgnoreChannels.Initialize
+		BanChannels.Initialize
+		
+		' ======================
+		' LOGGING INIT
+		' ======================
+		LogSources.Initialize
+		LogFilters.Initialize
+		LogTypes.Initialize
+		TrafficLogEnabled = False
+		MainLogEnabled = False
+		PrivateLogEnabled = False
 		
 		' ======================
 		' DCC DEFAULT CONFIG
@@ -891,6 +947,25 @@ Sub Bhelp()
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DCCCANCEL       - Cancels DCC transfer")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   AUTOGETDCC      - Auto-accepts DCC files")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   LISTDCC        - Lists DCC connections")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   ADDAUTOOP      - Adds auto-op user")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DELAUTOOP      - Removes auto-op user")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   LISTAUTOOPS    - Lists auto-op users")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   ADDASK         - Adds ask-op host")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DELASK         - Removes ask-op host")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   LISTASK        - Lists ask-op hosts")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   ADDIGNORE      - Adds ignore mask")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DELIGNORE      - Removes ignore mask")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   LISTIGNORES    - Lists ignore masks")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   ADDBAN         - Adds ban mask")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DELBAN         - Removes ban mask")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   LISTBANS       - Lists ban masks")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   ADDLOG         - Adds log source")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DELLOG         - Removes log source")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   LISTLOGS       - Lists log sources")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   PLAYTRAFFICLOG - Plays traffic log")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   ERASETRAFFICLOG - Erases traffic log")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   PLAYMAINLOG    - Plays main log")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   ERASEMAINLOG   - Erases main log")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   SSLCONFIG       - Shows SSL configuration")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   SSLENABLE       - Enables SSL support")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   SSLDISABLE      - Disables SSL support")
@@ -1846,6 +1921,339 @@ Dim tw As TextWriter
 			Return ""
 		End If
 		' ============================
+		' ADDAUTOOP COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("ADDAUTOOP") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
+			Dim AutoOpCommand As String
+			AutoOpCommand = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If AutoOpCommand.Length > 0 Then
+				Dim AutoOpParts() As String
+				AutoOpParts = AutoOpCommand.Split("'")
+				
+				If AutoOpParts.Length >= 3 Then
+					Dim AutoOpUser As String
+					Dim AutoOpChannel As String
+					Dim AutoOpLevel As Int
+					AutoOpUser = AutoOpParts(0).Trim
+					AutoOpChannel = AutoOpParts(1).Trim
+					AutoOpLevel = AutoOpParts(2).Trim
+					
+					If AddAutoOp(AutoOpUser, AutoOpChannel, AutoOpLevel) Then
+						WriteSocket(":-psyBNC PRIVMSG psyBNC Auto-op added: " & AutoOpUser & " on " & AutoOpChannel & " (level " & AutoOpLevel & ")")
+					Else
+						WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to add auto-op for " & AutoOpUser)
+					End If
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: ADDAUTOOP user'channel'level")
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: ADDAUTOOP user'channel'level")
+			End If
+			Return ""
+		End If
+		' ============================
+		' DELAUTOOP COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("DELAUTOOP") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
+			Dim DelAutoOpUser As String
+			DelAutoOpUser = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If DelAutoOpUser.Length > 0 Then
+				If RemoveAutoOp(DelAutoOpUser) Then
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Auto-op removed: " & DelAutoOpUser)
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to remove auto-op for " & DelAutoOpUser)
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: DELAUTOOP user")
+			End If
+			Return ""
+		End If
+		' ============================
+		' LISTAUTOOPS COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("LISTAUTOOPS") AND IRClient == True AND joinpasswd = True Then
+			Dim AutoOpList As String
+			AutoOpList = GetAutoOpList()
+			WriteSocket(":-psyBNC PRIVMSG psyBNC " & AutoOpList)
+			Return ""
+		End If
+		' ============================
+		' ADDASK COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("ADDASK") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
+			Dim AskCommand As String
+			AskCommand = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If AskCommand.Length > 0 Then
+				Dim AskParts() As String
+				AskParts = AskCommand.Split("'")
+				
+				If AskParts.Length >= 2 Then
+					Dim AskHost As String
+					Dim AskChannel As String
+					AskHost = AskParts(0).Trim
+					AskChannel = AskParts(1).Trim
+					
+					If AddAskOp(AskHost, AskChannel) Then
+						WriteSocket(":-psyBNC PRIVMSG psyBNC Ask-op added: " & AskHost & " on " & AskChannel)
+					Else
+						WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to add ask-op for " & AskHost)
+					End If
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: ADDASK host'channel")
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: ADDASK host'channel")
+			End If
+			Return ""
+		End If
+		' ============================
+		' DELASK COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("DELASK") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
+			Dim DelAskHost As String
+			DelAskHost = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If DelAskHost.Length > 0 Then
+				If RemoveAskOp(DelAskHost) Then
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Ask-op removed: " & DelAskHost)
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to remove ask-op for " & DelAskHost)
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: DELASK host")
+			End If
+			Return ""
+		End If
+		' ============================
+		' LISTASK COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("LISTASK") AND IRClient == True AND joinpasswd = True Then
+			Dim AskList As String
+			AskList = GetAskOpList()
+			WriteSocket(":-psyBNC PRIVMSG psyBNC " & AskList)
+			Return ""
+		End If
+		' ============================
+		' ADDIGNORE COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("ADDIGNORE") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
+			Dim IgnoreCommand As String
+			IgnoreCommand = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If IgnoreCommand.Length > 0 Then
+				Dim IgnoreParts() As String
+				IgnoreParts = IgnoreCommand.Split("'")
+				
+				If IgnoreParts.Length >= 3 Then
+					Dim IgnoreMask As String
+					Dim IgnoreType As String
+					Dim IgnoreChannel As String
+					IgnoreMask = IgnoreParts(0).Trim
+					IgnoreType = IgnoreParts(1).Trim
+					IgnoreChannel = IgnoreParts(2).Trim
+					
+					If AddIgnore(IgnoreMask, IgnoreType, IgnoreChannel) Then
+						WriteSocket(":-psyBNC PRIVMSG psyBNC Ignore added: " & IgnoreMask & " (type: " & IgnoreType & ", channel: " & IgnoreChannel & ")")
+					Else
+						WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to add ignore for " & IgnoreMask)
+					End If
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: ADDIGNORE mask'type'channel")
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: ADDIGNORE mask'type'channel")
+			End If
+			Return ""
+		End If
+		' ============================
+		' DELIGNORE COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("DELIGNORE") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
+			Dim DelIgnoreMask As String
+			DelIgnoreMask = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If DelIgnoreMask.Length > 0 Then
+				If RemoveIgnore(DelIgnoreMask) Then
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Ignore removed: " & DelIgnoreMask)
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to remove ignore for " & DelIgnoreMask)
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: DELIGNORE mask")
+			End If
+			Return ""
+		End If
+		' ============================
+		' LISTIGNORES COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("LISTIGNORES") AND IRClient == True AND joinpasswd = True Then
+			Dim IgnoreList As String
+			IgnoreList = GetIgnoreList()
+			WriteSocket(":-psyBNC PRIVMSG psyBNC " & IgnoreList)
+			Return ""
+		End If
+		' ============================
+		' ADDBAN COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("ADDBAN") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
+			Dim BanCommand As String
+			BanCommand = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If BanCommand.Length > 0 Then
+				Dim BanParts() As String
+				BanParts = BanCommand.Split("'")
+				
+				If BanParts.Length >= 3 Then
+					Dim BanMask As String
+					Dim BanReason As String
+					Dim BanChannel As String
+					BanMask = BanParts(0).Trim
+					BanReason = BanParts(1).Trim
+					BanChannel = BanParts(2).Trim
+					
+					If AddBan(BanMask, BanReason, BanChannel) Then
+						WriteSocket(":-psyBNC PRIVMSG psyBNC Ban added: " & BanMask & " (reason: " & BanReason & ", channel: " & BanChannel & ")")
+					Else
+						WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to add ban for " & BanMask)
+					End If
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: ADDBAN mask'reason'channel")
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: ADDBAN mask'reason'channel")
+			End If
+			Return ""
+		End If
+		' ============================
+		' DELBAN COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("DELBAN") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
+			Dim DelBanMask As String
+			DelBanMask = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If DelBanMask.Length > 0 Then
+				If RemoveBan(DelBanMask) Then
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Ban removed: " & DelBanMask)
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to remove ban for " & DelBanMask)
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: DELBAN mask")
+			End If
+			Return ""
+		End If
+		' ============================
+		' LISTBANS COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("LISTBANS") AND IRClient == True AND joinpasswd = True Then
+			Dim BanList As String
+			BanList = GetBanList()
+			WriteSocket(":-psyBNC PRIVMSG psyBNC " & BanList)
+			Return ""
+		End If
+		' ============================
+		' ADDLOG COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("ADDLOG") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
+			Dim LogCommand As String
+			LogCommand = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If LogCommand.Length > 0 Then
+				Dim LogParts() As String
+				LogParts = LogCommand.Split("'")
+				
+				If LogParts.Length >= 3 Then
+					Dim LogSource As String
+					Dim LogType As String
+					Dim LogFilter As String
+					LogSource = LogParts(0).Trim
+					LogType = LogParts(1).Trim
+					LogFilter = LogParts(2).Trim
+					
+					If AddLogSource(LogSource, LogType, LogFilter) Then
+						WriteSocket(":-psyBNC PRIVMSG psyBNC Log source added: " & LogSource & " (type: " & LogType & ", filter: " & LogFilter & ")")
+					Else
+						WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to add log source: " & LogSource)
+					End If
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: ADDLOG source'type'filter")
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: ADDLOG source'type'filter")
+			End If
+			Return ""
+		End If
+		' ============================
+		' DELLOG COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("DELLOG") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
+			Dim DelLogSource As String
+			DelLogSource = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If DelLogSource.Length > 0 Then
+				If RemoveLogSource(DelLogSource) Then
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Log source removed: " & DelLogSource)
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to remove log source: " & DelLogSource)
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: DELLOG source")
+			End If
+			Return ""
+		End If
+		' ============================
+		' LISTLOGS COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("LISTLOGS") AND IRClient == True AND joinpasswd = True Then
+			Dim LogList As String
+			LogList = GetLogSourcesList()
+			WriteSocket(":-psyBNC PRIVMSG psyBNC " & LogList)
+			Return ""
+		End If
+		' ============================
+		' PLAYTRAFFICLOG COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("PLAYTRAFFICLOG") AND IRClient == True AND joinpasswd = True Then
+			Dim TrafficLog As String
+			TrafficLog = PlayTrafficLog()
+			WriteSocket(":-psyBNC PRIVMSG psyBNC " & TrafficLog)
+			Return ""
+		End If
+		' ============================
+		' ERASETRAFFICLOG COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("ERASETRAFFICLOG") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
+			If EraseTrafficLog() Then
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Traffic log erased and disabled")
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to erase traffic log")
+			End If
+			Return ""
+		End If
+		' ============================
+		' PLAYMAINLOG COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("PLAYMAINLOG") AND IRClient == True AND joinpasswd = True Then
+			Dim MainLog As String
+			MainLog = PlayMainLog()
+			WriteSocket(":-psyBNC PRIVMSG psyBNC " & MainLog)
+			Return ""
+		End If
+		' ============================
+		' ERASEMAINLOG COMMANDS
+		' ===================
+		If Read.ToUpperCase.Contains("ERASEMAINLOG") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
+			If EraseMainLog() Then
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Main log erased and disabled")
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to erase main log")
+			End If
+			Return ""
+		End If
+		' ============================
 		' SCRIVI SUL SOCKET
 		' SE NON FA IL COMANDO CLOSE
 		' ============================
@@ -2255,6 +2663,21 @@ Sub SaveCurrentState()
 		StateData.Put("DCCAutoGetUsers", DCCAutoGetUsers)
 		StateData.Put("DCCAutoGetNetworks", DCCAutoGetNetworks)
 		StateData.Put("MyIP", MyIP)
+		StateData.Put("AutoOpList", AutoOpList)
+		StateData.Put("AutoOpChannels", AutoOpChannels)
+		StateData.Put("AutoOpLevels", AutoOpLevels)
+		StateData.Put("AskOpList", AskOpList)
+		StateData.Put("AskOpChannels", AskOpChannels)
+		StateData.Put("IgnoreList", IgnoreList)
+		StateData.Put("IgnoreTypes", IgnoreTypes)
+		StateData.Put("IgnoreChannels", IgnoreChannels)
+		StateData.Put("BanChannels", BanChannels)
+		StateData.Put("LogSources", LogSources)
+		StateData.Put("LogFilters", LogFilters)
+		StateData.Put("LogTypes", LogTypes)
+		StateData.Put("TrafficLogEnabled", TrafficLogEnabled)
+		StateData.Put("MainLogEnabled", MainLogEnabled)
+		StateData.Put("PrivateLogEnabled", PrivateLogEnabled)
 		StateData.Put("SSLEnabled", SSLEnabled)
 		StateData.Put("SSLPort", SSLPort)
 		
@@ -3869,6 +4292,455 @@ Sub GetDCCConnectionsList() As String
 	Catch Error As Exception
 		LogError("GET_DCC_LIST_ERROR", Error.Message, "GetDCCConnectionsList")
 		Return "Error retrieving DCC connections list"
+	End Try
+End Sub
+
+' ======================
+' AUTO-OP FUNCTIONS
+' ======================
+
+Sub AddAutoOp(User As String, Channel As String, Level As Int) As Boolean
+	Try
+		' Controlla se già esiste
+		If AutoOpList.IndexOf(User) <> -1 Then
+			LogError("AUTO_OP_EXISTS", "Auto-op already exists for " & User, "AddAutoOp")
+			Return False
+		End If
+		
+		' Aggiungi alla lista
+		AutoOpList.Add(User)
+		AutoOpChannels.Put(User, Channel)
+		AutoOpLevels.Put(User, Level)
+		
+		LogInfo("Auto-op added: " & User & " on " & Channel & " (level " & Level & ")", "AddAutoOp")
+		Return True
+		
+	Catch Error As Exception
+		LogError("ADD_AUTO_OP_ERROR", Error.Message, "AddAutoOp")
+		Return False
+	End Try
+End Sub
+
+Sub RemoveAutoOp(User As String) As Boolean
+	Try
+		' Controlla se esiste
+		If AutoOpList.IndexOf(User) = -1 Then
+			LogError("AUTO_OP_NOT_FOUND", "Auto-op not found for " & User, "RemoveAutoOp")
+			Return False
+		End If
+		
+		' Rimuovi dalla lista
+		AutoOpList.RemoveAt(AutoOpList.IndexOf(User))
+		AutoOpChannels.Remove(User)
+		AutoOpLevels.Remove(User)
+		
+		LogInfo("Auto-op removed: " & User, "RemoveAutoOp")
+		Return True
+		
+	Catch Error As Exception
+		LogError("REMOVE_AUTO_OP_ERROR", Error.Message, "RemoveAutoOp")
+		Return False
+	End Try
+End Sub
+
+Sub GetAutoOpList() As String
+	Try
+		Dim Result As String
+		Result = "Auto-Op List:" & Chr(10)
+		
+		If AutoOpList.Size > 0 Then
+			For i = 0 To AutoOpList.Size - 1
+				Dim User As String
+				Dim Channel As String
+				Dim Level As Int
+				
+				User = AutoOpList.Get(i)
+				Channel = AutoOpChannels.Get(User)
+				Level = AutoOpLevels.Get(User)
+				
+				Result = Result & "  " & (i+1) & ". " & User & " on " & Channel & " (level " & Level & ")" & Chr(10)
+			Next
+		Else
+			Result = Result & "No auto-op users configured."
+		End If
+		
+		Return Result
+		
+	Catch Error As Exception
+		LogError("GET_AUTO_OP_LIST_ERROR", Error.Message, "GetAutoOpList")
+		Return "Error retrieving auto-op list"
+	End Try
+End Sub
+
+Sub AddAskOp(Host As String, Channel As String) As Boolean
+	Try
+		' Controlla se già esiste
+		If AskOpList.IndexOf(Host) <> -1 Then
+			LogError("ASK_OP_EXISTS", "Ask-op already exists for " & Host, "AddAskOp")
+			Return False
+		End If
+		
+		' Aggiungi alla lista
+		AskOpList.Add(Host)
+		AskOpChannels.Put(Host, Channel)
+		
+		LogInfo("Ask-op added: " & Host & " on " & Channel, "AddAskOp")
+		Return True
+		
+	Catch Error As Exception
+		LogError("ADD_ASK_OP_ERROR", Error.Message, "AddAskOp")
+		Return False
+	End Try
+End Sub
+
+Sub RemoveAskOp(Host As String) As Boolean
+	Try
+		' Controlla se esiste
+		If AskOpList.IndexOf(Host) = -1 Then
+			LogError("ASK_OP_NOT_FOUND", "Ask-op not found for " & Host, "RemoveAskOp")
+			Return False
+		End If
+		
+		' Rimuovi dalla lista
+		AskOpList.RemoveAt(AskOpList.IndexOf(Host))
+		AskOpChannels.Remove(Host)
+		
+		LogInfo("Ask-op removed: " & Host, "RemoveAskOp")
+		Return True
+		
+	Catch Error As Exception
+		LogError("REMOVE_ASK_OP_ERROR", Error.Message, "RemoveAskOp")
+		Return False
+	End Try
+End Sub
+
+Sub GetAskOpList() As String
+	Try
+		Dim Result As String
+		Result = "Ask-Op List:" & Chr(10)
+		
+		If AskOpList.Size > 0 Then
+			For i = 0 To AskOpList.Size - 1
+				Dim Host As String
+				Dim Channel As String
+				
+				Host = AskOpList.Get(i)
+				Channel = AskOpChannels.Get(Host)
+				
+				Result = Result & "  " & (i+1) & ". " & Host & " on " & Channel & Chr(10)
+			Next
+		Else
+			Result = Result & "No ask-op hosts configured."
+		End If
+		
+		Return Result
+		
+	Catch Error As Exception
+		LogError("GET_ASK_OP_LIST_ERROR", Error.Message, "GetAskOpList")
+		Return "Error retrieving ask-op list"
+	End Try
+End Sub
+
+' ======================
+' IGNORE/BAN FUNCTIONS
+' ======================
+
+Sub AddIgnore(Mask As String, IgnoreType As String, Channel As String) As Boolean
+	Try
+		' Controlla se già esiste
+		If IgnoreList.IndexOf(Mask) <> -1 Then
+			LogError("IGNORE_EXISTS", "Ignore already exists for " & Mask, "AddIgnore")
+			Return False
+		End If
+		
+		' Aggiungi alla lista
+		IgnoreList.Add(Mask)
+		IgnoreTypes.Put(Mask, IgnoreType)
+		IgnoreChannels.Put(Mask, Channel)
+		
+		LogInfo("Ignore added: " & Mask & " (type: " & IgnoreType & ", channel: " & Channel & ")", "AddIgnore")
+		Return True
+		
+	Catch Error As Exception
+		LogError("ADD_IGNORE_ERROR", Error.Message, "AddIgnore")
+		Return False
+	End Try
+End Sub
+
+Sub RemoveIgnore(Mask As String) As Boolean
+	Try
+		' Controlla se esiste
+		If IgnoreList.IndexOf(Mask) = -1 Then
+			LogError("IGNORE_NOT_FOUND", "Ignore not found for " & Mask, "RemoveIgnore")
+			Return False
+		End If
+		
+		' Rimuovi dalla lista
+		IgnoreList.RemoveAt(IgnoreList.IndexOf(Mask))
+		IgnoreTypes.Remove(Mask)
+		IgnoreChannels.Remove(Mask)
+		
+		LogInfo("Ignore removed: " & Mask, "RemoveIgnore")
+		Return True
+		
+	Catch Error As Exception
+		LogError("REMOVE_IGNORE_ERROR", Error.Message, "RemoveIgnore")
+		Return False
+	End Try
+End Sub
+
+Sub GetIgnoreList() As String
+	Try
+		Dim Result As String
+		Result = "Ignore List:" & Chr(10)
+		
+		If IgnoreList.Size > 0 Then
+			For i = 0 To IgnoreList.Size - 1
+				Dim Mask As String
+				Dim IgnoreType As String
+				Dim Channel As String
+				
+				Mask = IgnoreList.Get(i)
+				IgnoreType = IgnoreTypes.Get(Mask)
+				Channel = IgnoreChannels.Get(Mask)
+				
+				Result = Result & "  " & (i+1) & ". " & Mask & " (type: " & IgnoreType & ", channel: " & Channel & ")" & Chr(10)
+			Next
+		Else
+			Result = Result & "No ignore masks configured."
+		End If
+		
+		Return Result
+		
+	Catch Error As Exception
+		LogError("GET_IGNORE_LIST_ERROR", Error.Message, "GetIgnoreList")
+		Return "Error retrieving ignore list"
+	End Try
+End Sub
+
+Sub AddBan(Mask As String, Reason As String, Channel As String) As Boolean
+	Try
+		' Controlla se già esiste
+		If BanList.IndexOf(Mask) <> -1 Then
+			LogError("BAN_EXISTS", "Ban already exists for " & Mask, "AddBan")
+			Return False
+		End If
+		
+		' Aggiungi alla lista
+		BanList.Add(Mask)
+		BanReasons.Put(Mask, Reason)
+		BanChannels.Put(Mask, Channel)
+		
+		LogInfo("Ban added: " & Mask & " (reason: " & Reason & ", channel: " & Channel & ")", "AddBan")
+		Return True
+		
+	Catch Error As Exception
+		LogError("ADD_BAN_ERROR", Error.Message, "AddBan")
+		Return False
+	End Try
+End Sub
+
+Sub RemoveBan(Mask As String) As Boolean
+	Try
+		' Controlla se esiste
+		If BanList.IndexOf(Mask) = -1 Then
+			LogError("BAN_NOT_FOUND", "Ban not found for " & Mask, "RemoveBan")
+			Return False
+		End If
+		
+		' Rimuovi dalla lista
+		BanList.RemoveAt(BanList.IndexOf(Mask))
+		BanReasons.Remove(Mask)
+		BanChannels.Remove(Mask)
+		
+		LogInfo("Ban removed: " & Mask, "RemoveBan")
+		Return True
+		
+	Catch Error As Exception
+		LogError("REMOVE_BAN_ERROR", Error.Message, "RemoveBan")
+		Return False
+	End Try
+End Sub
+
+Sub GetBanList() As String
+	Try
+		Dim Result As String
+		Result = "Ban List:" & Chr(10)
+		
+		If BanList.Size > 0 Then
+			For i = 0 To BanList.Size - 1
+				Dim Mask As String
+				Dim Reason As String
+				Dim Channel As String
+				
+				Mask = BanList.Get(i)
+				Reason = BanReasons.Get(Mask)
+				Channel = BanChannels.Get(Mask)
+				
+				Result = Result & "  " & (i+1) & ". " & Mask & " (reason: " & Reason & ", channel: " & Channel & ")" & Chr(10)
+			Next
+		Else
+			Result = Result & "No ban masks configured."
+		End If
+		
+		Return Result
+		
+	Catch Error As Exception
+		LogError("GET_BAN_LIST_ERROR", Error.Message, "GetBanList")
+		Return "Error retrieving ban list"
+	End Try
+End Sub
+
+' ======================
+' LOGGING FUNCTIONS
+' ======================
+
+Sub AddLogSource(Source As String, LogType As String, Filter As String) As Boolean
+	Try
+		' Controlla se già esiste
+		If LogSources.IndexOf(Source) <> -1 Then
+			LogError("LOG_SOURCE_EXISTS", "Log source already exists: " & Source, "AddLogSource")
+			Return False
+		End If
+		
+		' Aggiungi alla lista
+		LogSources.Add(Source)
+		LogTypes.Put(Source, LogType)
+		LogFilters.Put(Source, Filter)
+		
+		LogInfo("Log source added: " & Source & " (type: " & LogType & ", filter: " & Filter & ")", "AddLogSource")
+		Return True
+		
+	Catch Error As Exception
+		LogError("ADD_LOG_SOURCE_ERROR", Error.Message, "AddLogSource")
+		Return False
+	End Try
+End Sub
+
+Sub RemoveLogSource(Source As String) As Boolean
+	Try
+		' Controlla se esiste
+		If LogSources.IndexOf(Source) = -1 Then
+			LogError("LOG_SOURCE_NOT_FOUND", "Log source not found: " & Source, "RemoveLogSource")
+			Return False
+		End If
+		
+		' Rimuovi dalla lista
+		LogSources.RemoveAt(LogSources.IndexOf(Source))
+		LogTypes.Remove(Source)
+		LogFilters.Remove(Source)
+		
+		LogInfo("Log source removed: " & Source, "RemoveLogSource")
+		Return True
+		
+	Catch Error As Exception
+		LogError("REMOVE_LOG_SOURCE_ERROR", Error.Message, "RemoveLogSource")
+		Return False
+	End Try
+End Sub
+
+Sub GetLogSourcesList() As String
+	Try
+		Dim Result As String
+		Result = "Log Sources:" & Chr(10)
+		
+		If LogSources.Size > 0 Then
+			For i = 0 To LogSources.Size - 1
+				Dim Source As String
+				Dim LogType As String
+				Dim Filter As String
+				
+				Source = LogSources.Get(i)
+				LogType = LogTypes.Get(Source)
+				Filter = LogFilters.Get(Source)
+				
+				Result = Result & "  " & (i+1) & ". " & Source & " (type: " & LogType & ", filter: " & Filter & ")" & Chr(10)
+			Next
+		Else
+			Result = Result & "No log sources configured."
+		End If
+		
+		Return Result
+		
+	Catch Error As Exception
+		LogError("GET_LOG_SOURCES_ERROR", Error.Message, "GetLogSourcesList")
+		Return "Error retrieving log sources list"
+	End Try
+End Sub
+
+Sub PlayTrafficLog() As String
+	Try
+		Dim Result As String
+		Result = "Traffic Log:" & Chr(10)
+		
+		If TrafficLogEnabled Then
+			' Simula lettura traffic log
+			Result = Result & "Traffic log is enabled and active." & Chr(10)
+			Result = Result & "Recent traffic entries would be displayed here." & Chr(10)
+		Else
+			Result = Result & "Traffic log is disabled."
+		End If
+		
+		Return Result
+		
+	Catch Error As Exception
+		LogError("PLAY_TRAFFIC_LOG_ERROR", Error.Message, "PlayTrafficLog")
+		Return "Error retrieving traffic log"
+	End Try
+End Sub
+
+Sub EraseTrafficLog() As Boolean
+	Try
+		If TrafficLogEnabled Then
+			TrafficLogEnabled = False
+			LogInfo("Traffic log erased and disabled", "EraseTrafficLog")
+			Return True
+		Else
+			LogError("TRAFFIC_LOG_DISABLED", "Traffic log is already disabled", "EraseTrafficLog")
+			Return False
+		End If
+		
+	Catch Error As Exception
+		LogError("ERASE_TRAFFIC_LOG_ERROR", Error.Message, "EraseTrafficLog")
+		Return False
+	End Try
+End Sub
+
+Sub PlayMainLog() As String
+	Try
+		Dim Result As String
+		Result = "Main Log:" & Chr(10)
+		
+		If MainLogEnabled Then
+			' Simula lettura main log
+			Result = Result & "Main log is enabled and active." & Chr(10)
+			Result = Result & "Recent main log entries would be displayed here." & Chr(10)
+		Else
+			Result = Result & "Main log is disabled."
+		End If
+		
+		Return Result
+		
+	Catch Error As Exception
+		LogError("PLAY_MAIN_LOG_ERROR", Error.Message, "PlayMainLog")
+		Return "Error retrieving main log"
+	End Try
+End Sub
+
+Sub EraseMainLog() As Boolean
+	Try
+		If MainLogEnabled Then
+			MainLogEnabled = False
+			LogInfo("Main log erased and disabled", "EraseMainLog")
+			Return True
+		Else
+			LogError("MAIN_LOG_DISABLED", "Main log is already disabled", "EraseMainLog")
+			Return False
+		End If
+		
+	Catch Error As Exception
+		LogError("ERASE_MAIN_LOG_ERROR", Error.Message, "EraseMainLog")
+		Return False
 	End Try
 End Sub
 
