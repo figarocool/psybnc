@@ -76,6 +76,22 @@ Client IRC → psyBNC Server → Server IRC
 - **Controllo sicurezza** - Filtro tipi file e dimensioni
 - **Notifiche** - Avvisi per file ricevuti
 
+## Licenza
+
+### Copyright e Uso
+- **Autore**: Stefano Basile - 8byte
+- **Sito Web**: https://8byte.it/
+- **Licenza**: Uso personale e non commerciale
+- **Distribuzione**: Richiede autorizzazione scritta
+- **Uso commerciale**: Contattare l'autore
+
+### Contatti per Autorizzazioni
+- **Email**: [email protected]
+- **Sito Web**: https://8byte.it/
+- **LinkedIn**: Stefano Basile
+
+Per dettagli completi sulla licenza, vedere il file [LICENSE](LICENSE).
+
 ## Configurazione
 
 ### File di Configurazione

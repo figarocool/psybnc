@@ -1,0 +1,115 @@
+# Licenza psyBNC Android
+
+## Copyright (c) 2024 Stefano Basile - 8byte
+
+**Sito Web**: https://8byte.it/
+
+## Termini di Licenza
+
+### Uso Consentito
+- ✅ **Uso personale** e non commerciale
+- ✅ **Studio** e ricerca
+- ✅ **Sviluppo** di progetti personali
+- ✅ **Fork** e contributi al progetto originale
+
+### Uso NON Consentito
+- ❌ **Distribuzione commerciale** senza autorizzazione
+- ❌ **Rivendita** del software
+- ❌ **Uso commerciale** senza licenza
+- ❌ **Modifica** per scopi commerciali senza autorizzazione
+
+## Obblighi per la Distribuzione
+
+### Prima di Distribuire
+**È OBBLIGATORIO** contattare l'autore per:
+- 📧 **Autorizzazione scritta** per qualsiasi distribuzione
+- 📧 **Approvazione** per modifiche significative
+- 📧 **Consenso** per uso commerciale
+
+### Contatti per Autorizzazioni
+- **Email**: [email protected]
+- **Sito Web**: https://8byte.it/
+- **LinkedIn**: Stefano Basile
+
+## Attribuzione Richiesta
+
+### In Caso di Distribuzione
+Se autorizzato a distribuire, è **OBBLIGATORIO** includere:
+
+```
+psyBNC Android - IRC Bouncer
+Copyright (c) 2024 Stefano Basile - 8byte
+Sito Web: https://8byte.it/
+
+Questo software è distribuito con autorizzazione scritta dell'autore.
+Tutti i diritti riservati.
+```
+
+### Nel Codice Sorgente
+```basic
+' psyBNC Android - IRC Bouncer
+' Copyright (c) 2024 Stefano Basile - 8byte
+' Sito Web: https://8byte.it/
+' Licenza: Uso personale e non commerciale
+' Per uso commerciale contattare: [email protected]
+```
+
+## Limitazioni di Responsabilità
+
+### Disclaimer
+- Il software è fornito "così com'è" senza garanzie
+- L'autore non è responsabile per danni derivanti dall'uso
+- L'utente assume tutti i rischi nell'utilizzo del software
+
+### Supporto
+- **Supporto gratuito** per uso personale
+- **Supporto commerciale** disponibile su richiesta
+- **Contatti**: [email protected]
+
+## Violazioni della Licenza
+
+### Conseguenze
+- **Violazione** dei termini comporta la revoca della licenza
+- **Uso non autorizzato** può comportare azioni legali
+- **Distribuzione non autorizzata** è vietata
+
+### Segnalazione Violazioni
+Per segnalare violazioni della licenza:
+- **Email**: [email protected]
+- **Sito Web**: https://8byte.it/
+
+## Modifiche alla Licenza
+
+### Aggiornamenti
+- L'autore si riserva il diritto di modificare questa licenza
+- Le modifiche saranno comunicate tramite il repository GitHub
+- L'uso continuato implica l'accettazione delle modifiche
+
+### Versione
+- **Versione**: 1.0
+- **Data**: 2024
+- **Autore**: Stefano Basile - 8byte
+
+## Contatti e Supporto
+
+### Informazioni Azienda
+- **Ragione Sociale**: 8byte di Stefano Basile
+- **Indirizzo**: Via Gioacchino Rossini, 76
+- **CAP**: 72026 San Pancrazio Salentino (Brindisi)
+- **Partita IVA**: 02666750746
+- **Email**: [email protected]
+- **PEC**: [email protected]
+- **Sito Web**: https://8byte.it/
+
+### Servizi Professionali
+8byte offre servizi professionali per:
+- 🚀 **Sviluppo software** personalizzato
+- 🌐 **Web hosting** e domini
+- 💼 **Consulenza informatica** avanzata
+- 📱 **Applicazioni mobile** e desktop
+
+---
+
+**© 2024 Stefano Basile - 8byte. Tutti i diritti riservati.**
+
+**Per qualsiasi domanda sulla licenza, contattare: [email protected]**

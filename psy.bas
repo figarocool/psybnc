@@ -7,6 +7,19 @@ B4A=true
 	#StartAtBoot: False
 #End Region
 
+' ====================================================================
+' psyBNC Android - IRC Bouncer
+' Copyright (c) 2024 Stefano Basile - 8byte
+' Sito Web: https://8byte.it/
+' Email: [email protected]
+' 
+' Licenza: Uso personale e non commerciale
+' Per uso commerciale contattare: [email protected]
+' 
+' Questo software è distribuito con autorizzazione scritta dell'autore.
+' Tutti i diritti riservati.
+' ====================================================================
+
 'Service module
 Sub Process_Globals
  ' gestione delle varibili
