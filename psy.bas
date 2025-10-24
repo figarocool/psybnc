@@ -125,6 +125,39 @@ Dim UserLastSeen As Map         ' Ultimo accesso utenti
 Dim UserLoginAttempts As Map      ' Tentativi login
 Dim MaxLoginAttempts As Int     ' Massimo tentativi login
 
+' ======================
+' MULTI-CLIENT SUPPORT
+' ======================
+Dim ClientConnections As List   ' Lista connessioni client attive
+Dim ClientSockets As Map        ' Socket per ogni client
+Dim ClientStreams As Map        ' Stream per ogni client
+Dim ClientUsers As Map          ' Utente associato a ogni client
+Dim ClientNetworks As Map       ' Network attivo per ogni client
+Dim ClientChannels As Map       ' Canali per ogni client
+Dim ClientMessages As Map       ' Messaggi per ogni client
+
+' ======================
+' MULTI-NETWORK SUPPORT
+' ======================
+Dim NetworksList As List        ' Lista network configurati
+Dim NetworkConnections As Map   ' Connessioni per network
+Dim NetworkServers As Map       ' Server per ogni network
+Dim NetworkSockets As Map       ' Socket per ogni network
+Dim NetworkStreams As Map       ' Stream per ogni network
+Dim NetworkPrefixes As Map      ' Prefissi per network (Ef', Freenode', etc.)
+Dim NetworkChannels As Map      ' Canali per ogni network
+Dim NetworkUsers As Map         ' Utenti per ogni network
+
+' ======================
+' MULTI-SERVER SUPPORT
+' ======================
+Dim ServerConnections As List   ' Lista connessioni server attive
+Dim ServerSockets As Map        ' Socket per ogni server
+Dim ServerStreams As Map        ' Stream per ogni server
+Dim ServerNetworks As Map       ' Network associato a ogni server
+Dim ServerConfigs As Map        ' Configurazione per ogni server
+Dim ServerStatus As Map         ' Stato per ogni server
+
 End Sub
 Sub Service_Create
 'TimerService.Initialize("TimerService",1000)
@@ -200,6 +233,39 @@ Sub Service_Start (StartingIntent As Intent)
 		
 		' Crea utente admin di default
 		CreateDefaultAdmin()
+		
+		' ======================
+		' MULTI-CLIENT INIT
+		' ======================
+		ClientConnections.Initialize
+		ClientSockets.Initialize
+		ClientStreams.Initialize
+		ClientUsers.Initialize
+		ClientNetworks.Initialize
+		ClientChannels.Initialize
+		ClientMessages.Initialize
+		
+		' ======================
+		' MULTI-NETWORK INIT
+		' ======================
+		NetworksList.Initialize
+		NetworkConnections.Initialize
+		NetworkServers.Initialize
+		NetworkSockets.Initialize
+		NetworkStreams.Initialize
+		NetworkPrefixes.Initialize
+		NetworkChannels.Initialize
+		NetworkUsers.Initialize
+		
+		' ======================
+		' MULTI-SERVER INIT
+		' ======================
+		ServerConnections.Initialize
+		ServerSockets.Initialize
+		ServerStreams.Initialize
+		ServerNetworks.Initialize
+		ServerConfigs.Initialize
+		ServerStatus.Initialize
 		
 		' ======================
 		' START SYSTEMS
@@ -738,6 +804,12 @@ Sub Bhelp()
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   BWHO           - Lists all users")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   BKILL          - Kills user connection")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   USERINFO       - Shows user information")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   ADDNETWORK     - Adds a new network")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   DELNETWORK     - Deletes a network")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   LISTNETWORKS   - Lists all networks")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   ADDSERVER      - Adds server to network")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   CONNECTNETWORK - Connects to network")
+	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   LISTCLIENTS    - Lists all clients")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP   BHELP           - Lists this help OR help on a topic")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP Use /QUOTE bhelp <command> For details.")
 	tw.WriteLine(":-psyBNC PRIVMSG psyBNC BHELP - End of help")
@@ -1202,6 +1274,105 @@ Dim tw As TextWriter
 			Else
 				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: USERINFO login")
 			End If
+			Return ""
+		End If
+		' ============================
+		' ADD NETWORK
+		' ===================
+		If Read.ToUpperCase.Contains("ADDNETWORK") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
+			Dim NetworkName As String
+			NetworkName = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If NetworkName.Length > 0 Then
+				If AddNetwork(NetworkName) Then
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Network added successfully: " & NetworkName)
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to add network: " & NetworkName)
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: ADDNETWORK name")
+			End If
+			Return ""
+		End If
+		' ============================
+		' DELETE NETWORK
+		' ===================
+		If Read.ToUpperCase.Contains("DELNETWORK") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
+			Dim NetworkName As String
+			NetworkName = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If NetworkName.Length > 0 Then
+				If DeleteNetwork(NetworkName) Then
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Network deleted successfully: " & NetworkName)
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to delete network: " & NetworkName)
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: DELNETWORK name")
+			End If
+			Return ""
+		End If
+		' ============================
+		' LIST NETWORKS
+		' ===================
+		If Read.ToUpperCase.Contains("LISTNETWORKS") AND IRClient == True AND joinpasswd = True Then
+			Dim NetworkList As String
+			NetworkList = GetNetworkList()
+			WriteSocket(":-psyBNC PRIVMSG psyBNC Networks: " & NetworkList)
+			Return ""
+		End If
+		' ============================
+		' ADD SERVER TO NETWORK
+		' ===================
+		If Read.ToUpperCase.Contains("ADDSERVER") AND IRClient == True AND joinpasswd = True AND IsUserAdmin(Nickconnessione) Then
+			Dim NetworkName As String
+			Dim ServerHost As String
+			Dim ServerPort As Int
+			Dim CommandParts() As String
+			CommandParts = TogliPrimoComando(Read).Replace(Chr(10),"").Split("'")
+			
+			If CommandParts.Length >= 2 Then
+				NetworkName = CommandParts(0).Trim
+				Dim ServerParts() As String
+				ServerParts = CommandParts(1).Split(":")
+				ServerHost = ServerParts(0).Trim
+				ServerPort = ServerParts(1).Trim
+				
+				If AddServerToNetwork(NetworkName, ServerHost, ServerPort) Then
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Server added to network " & NetworkName & ": " & ServerHost & ":" & ServerPort)
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to add server to network " & NetworkName)
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: ADDSERVER network'server:port")
+			End If
+			Return ""
+		End If
+		' ============================
+		' CONNECT TO NETWORK
+		' ===================
+		If Read.ToUpperCase.Contains("CONNECTNETWORK") AND IRClient == True AND joinpasswd = True Then
+			Dim NetworkName As String
+			NetworkName = TogliPrimoComando(Read).Replace(Chr(10),"").Trim
+			
+			If NetworkName.Length > 0 Then
+				If ConnectToNetwork(NetworkName) Then
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Connected to network: " & NetworkName)
+				Else
+					WriteSocket(":-psyBNC PRIVMSG psyBNC Failed to connect to network: " & NetworkName)
+				End If
+			Else
+				WriteSocket(":-psyBNC PRIVMSG psyBNC Usage: CONNECTNETWORK name")
+			End If
+			Return ""
+		End If
+		' ============================
+		' LIST CLIENTS
+		' ===================
+		If Read.ToUpperCase.Contains("LISTCLIENTS") AND IRClient == True AND joinpasswd = True Then
+			Dim ClientList As String
+			ClientList = GetClientList()
+			WriteSocket(":-psyBNC PRIVMSG psyBNC Clients: " & ClientList)
 			Return ""
 		End If
 		' ============================
@@ -2240,6 +2411,353 @@ Sub AuthenticateUser(Login As String, Password As String) As Boolean
 		
 	Catch Error As Exception
 		LogError("AUTHENTICATE_ERROR", Error.Message, "AuthenticateUser")
+		Return False
+	End Try
+End Sub
+
+' ======================
+' MULTI-CLIENT FUNCTIONS
+' ======================
+
+Sub AddClientConnection(ClientID As String, Socket As Socket, User As String) As Boolean
+	Try
+		' Aggiungi connessione client
+		ClientConnections.Add(ClientID)
+		ClientSockets.Put(ClientID, Socket)
+		ClientUsers.Put(ClientID, User)
+		ClientNetworks.Put(ClientID, "")
+		
+		' Inizializza canali e messaggi per questo client
+		Dim ClientChannelList As List
+		ClientChannelList.Initialize
+		ClientChannels.Put(ClientID, ClientChannelList)
+		
+		Dim ClientMessageList As List
+		ClientMessageList.Initialize
+		ClientMessages.Put(ClientID, ClientMessageList)
+		
+		LogInfo("Client connection added: " & ClientID & " (User: " & User & ")", "AddClientConnection")
+		Return True
+		
+	Catch Error As Exception
+		LogError("ADD_CLIENT_ERROR", Error.Message, "AddClientConnection")
+		Return False
+	End Try
+End Sub
+
+Sub RemoveClientConnection(ClientID As String) As Boolean
+	Try
+		' Rimuovi connessione client
+		If ClientConnections.IndexOf(ClientID) <> -1 Then
+			ClientConnections.RemoveAt(ClientConnections.IndexOf(ClientID))
+			ClientSockets.Remove(ClientID)
+			ClientStreams.Remove(ClientID)
+			ClientUsers.Remove(ClientID)
+			ClientNetworks.Remove(ClientID)
+			ClientChannels.Remove(ClientID)
+			ClientMessages.Remove(ClientID)
+			
+			LogInfo("Client connection removed: " & ClientID, "RemoveClientConnection")
+			Return True
+		Else
+			LogError("CLIENT_NOT_FOUND", "Client not found: " & ClientID, "RemoveClientConnection")
+			Return False
+		End If
+		
+	Catch Error As Exception
+		LogError("REMOVE_CLIENT_ERROR", Error.Message, "RemoveClientConnection")
+		Return False
+	End Try
+End Sub
+
+Sub GetClientList() As String
+	Try
+		Dim Result As String
+		Result = ""
+		
+		For i = 0 To ClientConnections.Size - 1
+			Dim ClientID As String
+			ClientID = ClientConnections.Get(i)
+			
+			Dim User As String
+			User = ClientUsers.Get(ClientID)
+			
+			Dim Network As String
+			Network = ClientNetworks.Get(ClientID)
+			
+			Dim Status As String
+			Status = ClientID & " (" & User & ")"
+			If Network.Length > 0 Then
+				Status = Status & " [" & Network & "]"
+			End If
+			
+			If i = 0 Then
+				Result = Status
+			Else
+				Result = Result & ", " & Status
+			End If
+		Next
+		
+		Return Result
+		
+	Catch Error As Exception
+		LogError("GET_CLIENT_LIST_ERROR", Error.Message, "GetClientList")
+		Return "Error retrieving client list"
+	End Try
+End Sub
+
+Sub WriteToClient(ClientID As String, Message As String) As Boolean
+	Try
+		' Controlla se client esiste
+		If ClientConnections.IndexOf(ClientID) = -1 Then
+			LogError("CLIENT_NOT_FOUND", "Client not found: " & ClientID, "WriteToClient")
+			Return False
+		End If
+		
+		' Ottieni socket del client
+		Dim ClientSocket As Socket
+		ClientSocket = ClientSockets.Get(ClientID)
+		
+		' Controlla se socket è connesso
+		If ClientSocket.Connected = False Then
+			LogError("CLIENT_DISCONNECTED", "Client disconnected: " & ClientID, "WriteToClient")
+			RemoveClientConnection(ClientID)
+			Return False
+		End If
+		
+		' Invia messaggio
+		Dim tr As TextReader
+		Dim tw As TextWriter
+		tr.Initialize(ClientSocket.InputStream)
+		tw.Initialize(ClientSocket.OutputStream)
+		tw.WriteLine(Message)
+		tw.Flush
+		
+		LogInfo("Message sent to client " & ClientID & ": " & Message, "WriteToClient")
+		Return True
+		
+	Catch Error As Exception
+		LogError("WRITE_TO_CLIENT_ERROR", Error.Message, "WriteToClient")
+		Return False
+	End Try
+End Sub
+
+Sub BroadcastToAllClients(Message As String)
+	Try
+		For i = 0 To ClientConnections.Size - 1
+			Dim ClientID As String
+			ClientID = ClientConnections.Get(i)
+			WriteToClient(ClientID, Message)
+		Next
+		
+		LogInfo("Message broadcasted to all clients: " & Message, "BroadcastToAllClients")
+		
+	Catch Error As Exception
+		LogError("BROADCAST_ERROR", Error.Message, "BroadcastToAllClients")
+	End Try
+End Sub
+
+' ======================
+' MULTI-NETWORK FUNCTIONS
+' ======================
+
+Sub AddNetwork(NetworkName As String) As Boolean
+	Try
+		' Controlla se network esiste già
+		If NetworksList.IndexOf(NetworkName) <> -1 Then
+			LogError("NETWORK_EXISTS", "Network already exists: " & NetworkName, "AddNetwork")
+			Return False
+		End If
+		
+		' Aggiungi network
+		NetworksList.Add(NetworkName)
+		NetworkPrefixes.Put(NetworkName, NetworkName & "'")
+		
+		' Inizializza strutture per network
+		Dim NetworkServerList As List
+		NetworkServerList.Initialize
+		NetworkServers.Put(NetworkName, NetworkServerList)
+		
+		Dim NetworkChannelList As List
+		NetworkChannelList.Initialize
+		NetworkChannels.Put(NetworkName, NetworkChannelList)
+		
+		Dim NetworkUserList As List
+		NetworkUserList.Initialize
+		NetworkUsers.Put(NetworkName, NetworkUserList)
+		
+		LogInfo("Network added: " & NetworkName, "AddNetwork")
+		Return True
+		
+	Catch Error As Exception
+		LogError("ADD_NETWORK_ERROR", Error.Message, "AddNetwork")
+		Return False
+	End Try
+End Sub
+
+Sub DeleteNetwork(NetworkName As String) As Boolean
+	Try
+		' Controlla se network esiste
+		If NetworksList.IndexOf(NetworkName) = -1 Then
+			LogError("NETWORK_NOT_FOUND", "Network not found: " & NetworkName, "DeleteNetwork")
+			Return False
+		End If
+		
+		' Rimuovi network
+		NetworksList.RemoveAt(NetworksList.IndexOf(NetworkName))
+		NetworkPrefixes.Remove(NetworkName)
+		NetworkServers.Remove(NetworkName)
+		NetworkChannels.Remove(NetworkName)
+		NetworkUsers.Remove(NetworkName)
+		
+		' Rimuovi connessioni associate
+		NetworkConnections.Remove(NetworkName)
+		NetworkSockets.Remove(NetworkName)
+		NetworkStreams.Remove(NetworkName)
+		
+		LogInfo("Network deleted: " & NetworkName, "DeleteNetwork")
+		Return True
+		
+	Catch Error As Exception
+		LogError("DELETE_NETWORK_ERROR", Error.Message, "DeleteNetwork")
+		Return False
+	End Try
+End Sub
+
+Sub GetNetworkList() As String
+	Try
+		Dim Result As String
+		Result = ""
+		
+		For i = 0 To NetworksList.Size - 1
+			Dim NetworkName As String
+			NetworkName = NetworksList.Get(i)
+			
+			Dim Prefix As String
+			Prefix = NetworkPrefixes.Get(NetworkName)
+			
+			Dim Status As String
+			Status = NetworkName & " (" & Prefix & ")"
+			
+			If i = 0 Then
+				Result = Status
+			Else
+				Result = Result & ", " & Status
+			End If
+		Next
+		
+		Return Result
+		
+	Catch Error As Exception
+		LogError("GET_NETWORK_LIST_ERROR", Error.Message, "GetNetworkList")
+		Return "Error retrieving network list"
+	End Try
+End Sub
+
+Sub AddServerToNetwork(NetworkName As String, ServerHost As String, ServerPort As Int) As Boolean
+	Try
+		' Controlla se network esiste
+		If NetworksList.IndexOf(NetworkName) = -1 Then
+			LogError("NETWORK_NOT_FOUND", "Network not found: " & NetworkName, "AddServerToNetwork")
+			Return False
+		End If
+		
+		' Aggiungi server al network
+		Dim NetworkServerList As List
+		NetworkServerList = NetworkServers.Get(NetworkName)
+		
+		Dim ServerInfo As Map
+		ServerInfo.Initialize
+		ServerInfo.Put("Host", ServerHost)
+		ServerInfo.Put("Port", ServerPort)
+		ServerInfo.Put("Status", "Disconnected")
+		
+		NetworkServerList.Add(ServerInfo)
+		NetworkServers.Put(NetworkName, NetworkServerList)
+		
+		LogInfo("Server added to network " & NetworkName & ": " & ServerHost & ":" & ServerPort, "AddServerToNetwork")
+		Return True
+		
+	Catch Error As Exception
+		LogError("ADD_SERVER_TO_NETWORK_ERROR", Error.Message, "AddServerToNetwork")
+		Return False
+	End Try
+End Sub
+
+Sub ConnectToNetwork(NetworkName As String) As Boolean
+	Try
+		' Controlla se network esiste
+		If NetworksList.IndexOf(NetworkName) = -1 Then
+			LogError("NETWORK_NOT_FOUND", "Network not found: " & NetworkName, "ConnectToNetwork")
+			Return False
+		End If
+		
+		' Ottieni server del network
+		Dim NetworkServerList As List
+		NetworkServerList = NetworkServers.Get(NetworkName)
+		
+		If NetworkServerList.Size = 0 Then
+			LogError("NO_SERVERS", "No servers configured for network: " & NetworkName, "ConnectToNetwork")
+			Return False
+		End If
+		
+		' Prova a connettersi al primo server disponibile
+		For i = 0 To NetworkServerList.Size - 1
+			Dim ServerInfo As Map
+			ServerInfo = NetworkServerList.Get(i)
+			
+			Dim ServerHost As String
+			Dim ServerPort As Int
+			ServerHost = ServerInfo.Get("Host")
+			ServerPort = ServerInfo.Get("Port")
+			
+			' Tenta connessione
+			If ConnectToIRCServer(ServerHost, ServerPort, NetworkName) Then
+				LogInfo("Connected to network " & NetworkName & " via " & ServerHost & ":" & ServerPort, "ConnectToNetwork")
+				Return True
+			End If
+		Next
+		
+		LogError("CONNECTION_FAILED", "Failed to connect to any server in network: " & NetworkName, "ConnectToNetwork")
+		Return False
+		
+	Catch Error As Exception
+		LogError("CONNECT_TO_NETWORK_ERROR", Error.Message, "ConnectToNetwork")
+		Return False
+	End Try
+End Sub
+
+Sub ConnectToIRCServer(ServerHost As String, ServerPort As Int, NetworkName As String) As Boolean
+	Try
+		' Crea socket per server
+		Dim ServerSocket As Socket
+		ServerSocket.Initialize("ServerSocket_" & NetworkName)
+		
+		' Tenta connessione
+		ServerSocket.Connect(ServerHost, ServerPort)
+		
+		' Attendi connessione
+		Sleep(1000)
+		
+		If ServerSocket.Connected = True Then
+			' Salva connessione
+			Dim ServerID As String
+			ServerID = NetworkName & "_" & ServerHost & "_" & ServerPort
+			
+			ServerConnections.Add(ServerID)
+			ServerSockets.Put(ServerID, ServerSocket)
+			ServerNetworks.Put(ServerID, NetworkName)
+			ServerStatus.Put(ServerID, "Connected")
+			
+			LogInfo("IRC server connected: " & ServerHost & ":" & ServerPort & " (Network: " & NetworkName & ")", "ConnectToIRCServer")
+			Return True
+		Else
+			LogError("IRC_CONNECTION_FAILED", "Failed to connect to " & ServerHost & ":" & ServerPort, "ConnectToIRCServer")
+			Return False
+		End If
+		
+	Catch Error As Exception
+		LogError("IRC_CONNECTION_ERROR", Error.Message, "ConnectToIRCServer")
 		Return False
 	End Try
 End Sub
