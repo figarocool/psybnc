@@ -1,0 +1,115 @@
+apply plugin: 'com.android.application'
+
+def sdkRoot = System.getenv("ANDROID_SDK_ROOT") ?: System.getenv("ANDROID_HOME") ?: "C:/Users/stefano/AppData/Local/Android/Sdk"
+def ndkVersionValue = "26.1.10909125"
+def ndkBuildExecutable = org.gradle.internal.os.OperatingSystem.current().isWindows() ? "ndk-build.cmd" : "ndk-build"
+def ndkBuildPath = new File(sdkRoot, "ndk/${ndkVersionValue}/${ndkBuildExecutable}")
+
+android {
+    namespace "org.psybnc.app"
+    compileSdkVersion 35
+    ndkVersion ndkVersionValue
+
+    defaultConfig {
+        applicationId "org.psybnc.app"
+        minSdkVersion 21
+        targetSdkVersion 35
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+        }
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    sourceSets {
+        main {
+            assets.srcDirs = ['src/main/assets']
+        }
+    }
+
+    lint {
+        abortOnError false
+    }
+}
+
+tasks.register("buildPsybncBinaries", Exec) {
+    doFirst {
+        if (!ndkBuildPath.exists()) {
+            throw new GradleException("Android NDK non trovato: ${ndkBuildPath}")
+        }
+    }
+    workingDir file("..")
+    commandLine ndkBuildPath.absolutePath
+}
+
+tasks.register("copyPsybncAssets") {
+    dependsOn("buildPsybncBinaries")
+    outputs.dir(file("src/main/assets"))
+    outputs.upToDateWhen { false }
+    doLast {
+        delete(fileTree("src/main/assets/bin"))
+        delete(fileTree("src/main/jniLibs"))
+        copy {
+            from("../libs/armeabi-v7a/psybnc")
+            into("src/main/assets/bin/armeabi-v7a")
+        }
+        copy {
+            from("../libs/armeabi-v7a/psybnc")
+            into("src/main/jniLibs/armeabi-v7a")
+            rename { "libpsybnc.so" }
+        }
+        copy {
+            from("../libs/arm64-v8a/psybnc")
+            into("src/main/assets/bin/arm64-v8a")
+        }
+        copy {
+            from("../libs/arm64-v8a/psybnc")
+            into("src/main/jniLibs/arm64-v8a")
+            rename { "libpsybnc.so" }
+        }
+        copy {
+            from("../libs/x86/psybnc")
+            into("src/main/assets/bin/x86")
+        }
+        copy {
+            from("../libs/x86/psybnc")
+            into("src/main/jniLibs/x86")
+            rename { "libpsybnc.so" }
+        }
+        copy {
+            from("../libs/x86_64/psybnc")
+            into("src/main/assets/bin/x86_64")
+        }
+        copy {
+            from("../libs/x86_64/psybnc")
+            into("src/main/jniLibs/x86_64")
+            rename { "libpsybnc.so" }
+        }
+        copy {
+            from("../../lang/english.lng")
+            into("src/main/assets/lang")
+        }
+        copy {
+            from("../../lang/italiano.lng")
+            into("src/main/assets/lang")
+        }
+        copy {
+            from("../../scripts/example/DEFAULT.SCRIPT")
+            into("src/main/assets/scripts")
+        }
+    }
+}
+
+preBuild.dependsOn("copyPsybncAssets")

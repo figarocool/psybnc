@@ -1,0 +1,7 @@
+org.psybnc.app-pngs-0 C:\Users\stefano\Documents\sorgenti\psybnc\android\app\build\generated\res\pngs\release
+org.psybnc.app-resValues-1 C:\Users\stefano\Documents\sorgenti\psybnc\android\app\build\generated\res\resValues\release
+org.psybnc.app-mergeReleaseResources-2 C:\Users\stefano\Documents\sorgenti\psybnc\android\app\build\intermediates\incremental\release\mergeReleaseResources\merged.dir
+org.psybnc.app-mergeReleaseResources-3 C:\Users\stefano\Documents\sorgenti\psybnc\android\app\build\intermediates\incremental\release\mergeReleaseResources\stripped.dir
+org.psybnc.app-release-4 C:\Users\stefano\Documents\sorgenti\psybnc\android\app\build\intermediates\merged_res\release\mergeReleaseResources
+org.psybnc.app-main-5 C:\Users\stefano\Documents\sorgenti\psybnc\android\app\src\main\res
+org.psybnc.app-release-6 C:\Users\stefano\Documents\sorgenti\psybnc\android\app\src\release\res
