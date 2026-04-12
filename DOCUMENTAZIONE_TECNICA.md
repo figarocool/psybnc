@@ -1,298 +1,249 @@
-# Documentazione Tecnica - psyBNC
+# Documentazione Tecnica - psyBNC Android (C/NDK)
 
-## Analisi Architetturale
+## Panoramica del Sistema
 
-### Panoramica del Sistema
+psyBNC è un IRC Bouncer scritto in C, compilato tramite Android NDK e incapsulato in
+un'applicazione Android nativa. Il sistema è composto da due layer distinti:
 
-psyBNC è un IRC Bouncer implementato in Basic4Android (B4A) che funziona come proxy tra client IRC e server IRC. Il sistema è composto da due componenti principali:
-
-1. **Server Bouncer** (`psy.bas`) - Service Android che mantiene connessioni persistenti
-2. **Client di Test** (`irc connect/`) - Applicazione di esempio per testare connessioni IRC
-
-### Architettura a Livelli
+1. **Core nativo C** — il vero psyBNC originale, compilato per ARM/x86 tramite NDK
+2. **Wrapper Android** (Java) — gestisce il lifecycle del processo nativo su Android
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Client IRC    │◄──►│   psyBNC        │◄──►│   Server IRC    │
-│   (mIRC, etc.)  │    │   (Android)     │    │   (es. irc.freenode.net)│
+│   Client IRC    │◄──►│   psyBNC (C)    │◄──►│   Server IRC    │
+│  (mIRC, Hex...) │    │  processo nativo│    │  (qualsiasi)    │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
+                              ▲
+                              │ avvia / monitora
+                       ┌──────┴──────┐
+                       │ PsybncService│
+                       │    (Java)    │
+                       └─────────────┘
 ```
-
-## Analisi del Codice Sorgente
-
-### 1. Service Principal (psy.bas)
-
-#### Variabili Globali
-```basic
-' Gestione Socket
-Dim server As ServerSocket
-Dim socket_ricezione_dati As Socket    ' Client → Bouncer
-Dim socket_invio_dati As Socket       ' Bouncer → IRC Server
-
-' Gestione Stream
-Dim datisocket_ricezione As AsyncStreams
-Dim datisocket_ricezione_irc As AsyncStreams
-
-' Stato Connessione
-Dim statesocket As Boolean
-Dim IRClient As Boolean
-Dim joinpasswd As Boolean
-
-' Configurazione
-Dim serverPort As String
-Dim MyIP As String
-
-' Gestione Canali e Messaggi
-Dim joinchannel As List
-Dim Topichannel As List
-Dim MessageQuery As List
-
-' Gestione Nick
-Dim Nickconnessione As String
-Dim AwayNick As String
-Dim NormalNick As String
-
-' Timer
-Dim Timerserver As Timer
-Dim PingTimer As Timer
-```
-
-#### Funzioni Principali
-
-##### Gestione Connessioni
-- `Server_NewConnection()` - Gestisce nuove connessioni client
-- `socket_invio_dati_Connected()` - Gestisce connessione al server IRC
-- `TimerServer_Tick()` - Monitora e ripristina connessioni
-
-##### Parsing IRC
-- `Ricezione_Server()` - Parsing completo dei messaggi IRC dal server
-- `ClientInvio()` - Gestione comandi dal client
-- `WriteSocket()` / `WriteSocketIrc()` - Invio dati ai socket
-
-##### Gestione Dati
-- `ReadFile()` / `WriteFile()` - I/O file di configurazione
-- `SaveTopic()` - Salvataggio topic dei canali
-- `GeneraDAtaUnix()` - Generazione timestamp Unix
-
-### 2. Activity Principal (main.bas)
-
-#### Interfaccia Utente
-```basic
-' Controlli UI
-Dim Button1 As Button      ' Avvia servizio
-Dim Button2 As Button       ' Aggiorna IP
-Dim EditText1 As EditText   ' Porta server
-Dim EditText2 As EditText   ' IP dispositivo
-Dim TimerIP As Timer       ' Timer per IP
-```
-
-#### Funzionalità
-- **Configurazione WiFi**: Disattivazione sleep policy WiFi
-- **Gestione Servizio**: Avvio/controllo del service bouncer
-- **Visualizzazione IP**: Mostra l'IP del dispositivo per connessioni client
-
-### 3. Client di Test (irc connect/)
-
-#### Implementazione IRC Base
-```basic
-' Connessione IRC
-Sub Button_Click
-    socket_invio_dati.Initialize("socket_invio_dati")
-    socket_invio_dati.Connect("irc.azzurra.org","6667",0)
-End Sub
-
-' Gestione PING/PONG
-Sub datisocket_ricezione_irc_NewData (buffer() As Byte)
-    If PingString(0) = "PING " Then
-        tw.WriteLine("PONG "&PingString(1)&Chr(13))
-    End If
-End Sub
-```
-
-## Protocollo IRC Implementato
-
-### Comandi Supportati
-
-#### Dal Client al Bouncer
-- `CAP LS` - Capabilities negotiation
-- `NICK nickname` - Impostazione nickname
-- `USER user host * :realname` - Informazioni utente
-- `PASS password` - Autenticazione bouncer
-- `QUIT :message` - Disconnessione (mantiene bouncer attivo)
-
-#### Dal Server IRC
-- `PING` / `PONG` - Keep-alive
-- `001` - Welcome message
-- `376` - End of MOTD
-- `433` - Nickname in use
-- `PRIVMSG` - Messaggi privati
-- `JOIN` / `PART` - Gestione canali
-- `TOPIC` - Gestione topic
-- `NICK` - Cambio nickname
-- `KICK` - Rimozione da canale
-
-### Gestione Messaggi Privati
-
-```basic
-' Salvataggio messaggi privati
-If NumeroRaw(1) = "PRIVMSG" AND joinpasswd = False Then
-    Dim TildeChan As String 
-    TildeChan = NumeroRaw(2).SubString2(0,1)
-    If TildeChan <> "#" AND TildeChan <> "&" Then
-        ' Salva messaggio privato
-        MessageQuery.AddAll(Array As String(RealDate&" :("&SoloVhost(1)&")"& " " &MessageText))
-    End If
-End If
-```
-
-## Gestione dello Stato
-
-### Stati del Sistema
-
-1. **Inizializzazione**
-   - Creazione socket server
-   - Configurazione timer
-   - Inizializzazione liste
-
-2. **Connessione Client**
-   - Autenticazione richiesta
-   - Configurazione server IRC
-   - Stabilimento connessione IRC
-
-3. **Operativo**
-   - Proxy bidirezionale
-   - Gestione messaggi
-   - Mantenimento stato
-
-4. **Disconnessione Client**
-   - Mantenimento connessione IRC
-   - Salvataggio stato
-   - Gestione nick away
-
-### Persistenza Dati
-
-#### File di Configurazione (`psybnc.conf`)
-```
-Linea 1: USER user host * :realname
-Linea 2: PASSWD password
-Linea 3: server hostname:port
-```
-
-#### Strutture Dati in Memoria
-- `joinchannel` - Lista canali attivi
-- `Topichannel` - Topic dei canali
-- `MessageQuery` - Messaggi privati in attesa
-
-## Gestione Errori e Reconnessione
-
-### Timer di Monitoraggio
-```basic
-Sub TimerServer_Tick
-    ' Verifica connessione server IRC
-    If socket_invio_dati.Connected = False Then
-        ' Ripristina connessione
-        socket_invio_dati.Connect(StringConnection(0), StringConnection(1), 1000)
-    End If
-End Sub
-```
-
-### Gestione PING/PONG
-```basic
-Sub PingTimer_Tick
-    If AutoPing = True Then
-        WriteSocketIrc("PING :TIMEOUTCHECK"&Chr(10))
-        AutoPing = False
-    End If
-End Sub
-```
-
-## Configurazione Android
-
-### AndroidManifest.xml
-```xml
-<uses-permission android:name="android.permission.INTERNET"/>
-<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
-<uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
-<uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
-<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
-
-<service android:name=".psy"/>
-```
-
-### Configurazioni Specifiche
-- **Min SDK**: 4 (Android 1.6)
-- **Target SDK**: 14
-- **Orientamento**: Non specificato
-- **Installazione**: Solo memoria interna
-
-## Modalità DCC Implementate
-
-### Modalità SAVE (Predefinita)
-- **Comportamento**: File salvati sul bouncer per download successivo
-- **Vantaggi**: File disponibili anche offline, backup automatico
-- **Utilizzo**: Ideale per bouncer persistenti
-- **Implementazione**: `HandleDCCSave()` con salvataggio locale
-
-### Modalità FORWARD
-- **Comportamento**: File inoltrati direttamente al client connesso
-- **Vantaggi**: Trasferimento in tempo reale, nessun utilizzo spazio
-- **Utilizzo**: Ideale per connessioni dirette
-- **Implementazione**: `HandleDCCForward()` con inoltro diretto
-
-### Configurazione DCC
-```basic
-' Variabili di configurazione DCC
-Dim DCCMode As String          ' "SAVE" o "FORWARD"
-Dim DCCAutoAccept As Boolean  ' Auto-accetta file DCC
-Dim DCCMaxFileSize As Long    ' Dimensione massima file (bytes)
-Dim DCCAllowedTypes As List   ' Tipi di file permessi
-```
-
-### Controlli di Sicurezza
-- **Filtro tipi file**: Solo estensioni permesse
-- **Controllo dimensioni**: Limite massimo configurabile
-- **Validazione input**: Controllo parametri DCC
-
-## Limitazioni Tecniche
-
-### Architetturali
-- **Single Client**: Un solo client alla volta
-- **Single Server**: Un server IRC per sessione
-- **Memory Based**: Dati in memoria (non persistenti)
-- **Basic4Android**: Limitazioni del framework
-
-### Performance
-- **Threading**: Gestione asincrona tramite AsyncStreams
-- **Memory**: Gestione manuale delle liste
-- **Network**: Socket TCP standard
-
-### Sicurezza
-- **Autenticazione**: Password in chiaro
-- **Crittografia**: Non implementata
-- **Validazione**: Input limitato
-
-## Estensioni Possibili
-
-### Funzionalità Aggiuntive
-1. **Multi-client**: Supporto connessioni multiple
-2. **Multi-server**: Connessioni a più server IRC
-3. **Persistenza**: Database per messaggi e configurazioni
-4. **Crittografia**: SSL/TLS per connessioni sicure
-5. **Web Interface**: Interfaccia web per gestione
-
-### Miglioramenti Tecnici
-1. **Threading**: Gestione thread dedicati
-2. **Memory Management**: Gestione memoria ottimizzata
-3. **Error Handling**: Gestione errori robusta
-4. **Logging**: Sistema di log completo
-5. **Configuration**: File di configurazione avanzato
-
-## Conclusioni
-
-psyBNC rappresenta un'implementazione funzionale di IRC Bouncer per Android, dimostrando la fattibilità di soluzioni proxy IRC su dispositivi mobili. L'architettura modulare e l'uso di Basic4Android rendono il progetto accessibile per sviluppatori con background Basic/VB.
-
-Le limitazioni attuali (single client, gestione memoria manuale, autenticazione semplice) rappresentano aree di miglioramento per versioni future, ma il core funzionale è solido e dimostra i concetti fondamentali di un IRC Bouncer.
 
 ---
 
-**Nota Tecnica**: Questo progetto utilizza Basic4Android (B4A), un framework che compila codice Basic in Java per Android. Il codice generato è visibile nella directory `Objects/src/` e rappresenta la traduzione automatica del codice Basic in Java.
+## 1. Core Nativo C
+
+### Struttura sorgenti (`src/`)
+
+| File | Ruolo |
+|------|-------|
+| `psybnc.c` | Entry point principale, loop eventi |
+| `p_client.c` | Gestione connessioni client |
+| `p_server.c` | Gestione connessioni server IRC |
+| `p_socket.c` | Astrazione socket (TCP, IPv4/IPv6) |
+| `p_network.c` | Gestione rete e routing |
+| `p_parse.c` | Parsing messaggi IRC |
+| `p_peer.c` | Gestione peer e linking tra bouncer |
+| `p_link.c` | Protocollo di link psyBNC-psyBNC |
+| `p_intnet.c` | IRCD interno (IntNet) |
+| `p_uchannel.c` | Gestione canali utente |
+| `p_userfile.c` | Persistenza configurazione utenti |
+| `p_inifunc.c` | Parsing file `.conf` |
+| `p_log.c` | Sistema di logging |
+| `p_dcc.c` | Trasferimento file e chat DCC |
+| `p_script.c` | Sistema di scripting |
+| `p_blowfish.c` | Cifratura Blowfish |
+| `p_idea.c` | Cifratura IDEA |
+| `p_crypt.c` | Wrapper crittografia |
+| `p_hash.c` | Tabelle hash interne |
+| `p_memory.c` | Gestione memoria dinamica |
+| `p_string.c` | Utility stringhe |
+| `p_sysmsg.c` | Messaggi di sistema |
+| `p_topology.c` | Topologia rete interna |
+| `p_translate.c` | Modulo traduzione (BabelFish proxy) |
+| `p_dns.c` | Wrapper DNS (c-ares) |
+| `match.c` | Pattern matching wildcard |
+| `snprintf.c` | Implementazione snprintf portabile |
+| `bsd-setenv.c` | Compatibilità BSD setenv |
+| `c-ares/` | Libreria DNS asincrona (resolver) |
+
+### Funzionalità principali
+
+- Multi-user (configurabile tramite `MAXUSER`)
+- Multi-network: connessioni a più server IRC per utente
+- SSL/TLS per connessioni client e server
+- IPv6 nativo
+- DCC SEND/GET/CHAT con modalità SAVE e FORWARD
+- Blowfish e IDEA encryption per messaggi
+- Sistema di scripting
+- Linking tra istanze psyBNC (Partyline)
+- IRCD interno (IntNet)
+- Logging traffico, messaggi privati, connessioni
+- Proxy SOCKS/Wingate
+- Supporto VHOST
+- Traduzione automatica messaggi (BabelFish)
+- Oltre 200 comandi `/b` di amministrazione
+
+### Compilazione NDK
+
+La compilazione è controllata da `android/jni/Android.mk` e `android/jni/Application.mk`.
+
+**Android.mk** — definisce modulo, flag e sorgenti:
+```makefile
+LOCAL_MODULE    := psybnc
+LOCAL_CFLAGS    := -DHAVE_CONFIG -DHAVE_CONFIG_H -DANDROID -DIPV6 -std=gnu89
+LOCAL_LDLIBS    := -llog -lm
+```
+
+**Application.mk** — definisce le ABI target:
+- `arm64-v8a`
+- `armeabi-v7a`
+- `x86`
+- `x86_64`
+
+Il binario prodotto viene copiato in `android/app/src/main/assets/bin/<abi>/psybnc`
+e in `android/app/src/main/jniLibs/<abi>/libpsybnc.so` dal task Gradle `copyPsybncAssets`.
+
+### Variabili d'ambiente Android
+
+Il wrapper Java passa le seguenti variabili all'ambiente del processo nativo:
+
+| Variabile | Valore |
+|-----------|--------|
+| `PSYBNC_NOFORK` | `1` — disabilita il fork (richiesto su Android) |
+| `PSYBNC_BASE_DIR` | Path della directory runtime (`getFilesDir()/runtime`) |
+| `PSYBNC_CONFIG_FILE` | Path assoluto del `psybnc.conf` |
+| `PSYBNC_DOWNLOAD_DIR` | Directory download DCC |
+| `PSYBNC_LOG_FILE` | Path del file di log |
+| `PSYBNC_PID_FILE` | Vuoto (nessun PID file su Android) |
+| `HOME` | Uguale a `PSYBNC_BASE_DIR` |
+
+---
+
+## 2. Layer Android (Java)
+
+### Componenti
+
+#### `PsybncService.java` — Foreground Service
+Gestisce l'intero lifecycle del processo nativo psyBNC:
+
+- **`startServer()`** — prepara il runtime, estrae il binario, genera `psybnc.conf` se
+  assente, avvia il `Process` nativo con `ProcessBuilder`
+- **`stopServer()`** — distrugge il processo, invia `SIGKILL` ai processi residui,
+  rilascia il WakeLock
+- **`resetConfig()`** — ferma il server, cancella preferenze e directory runtime
+- **`prepareRuntime()`** — crea la struttura di directory e copia gli asset (lang, scripts)
+- **`extractBinary()`** — estrae il binario dalla `nativeLibraryDir` (priorità) o dagli
+  assets APK, imposta il flag eseguibile
+- **`writeConfig()`** — genera `psybnc.conf` con porta, host di bind e HOSTALLOWS per
+  reti locali (127.x, 10.x, 192.168.x, 172.16–31.x, IPv6 ULA/link-local)
+- **`startDownloadMonitor()`** — avvia un thread che monitora `psybnc.log` e invia
+  notifiche Android al completamento dei download DCC
+- **`updateState()`** — aggiorna SharedPreferences e notifica la UI tramite Broadcast
+
+**WakeLock**: `PowerManager.PARTIAL_WAKE_LOCK` — mantiene la CPU attiva per la
+connessione IRC persistente anche a schermo spento.
+
+**Foreground Service**: richiede tipo `dataSync` (AndroidManifest), necessario per
+Android 8+ (Oreo).
+
+#### `MainActivity.java` — UI principale
+
+- Configurazione porta (default `31337`, range 1024–65535)
+- Scelta dell'indirizzo di bind tramite dialog (tutte le interfacce di rete disponibili,
+  incluse IPv4 e IPv6)
+- Selezione cartella download DCC (SAF + percorsi predefiniti interni/esterni)
+- Abilitazione notifiche completamento download
+- Reset configurazione completo
+- Visualizzazione stato, IP corrente, ultimo log
+
+### Struttura runtime su disco
+
+```
+getFilesDir()/runtime/
+├── psybnc.conf          ← generato automaticamente al primo avvio
+├── log/
+│   └── psybnc.log       ← log nativo psyBNC
+├── lang/
+│   ├── english.lng      ← copiato dagli assets
+│   └── italiano.lng     ← copiato dagli assets
+├── scripts/
+│   └── DEFAULT.SCRIPT   ← copiato dagli assets
+└── bin/
+    └── psybnc           ← binario nativo (fallback se nativeLibraryDir non disponibile)
+```
+
+### Configurazione generata (`psybnc.conf`)
+
+```ini
+PSYBNC.SYSTEM.PORT1=<porta>
+PSYBNC.SYSTEM.HOST1=<bind_host>
+PSYBNC.SYSTEM.ME=android-psybnc
+PSYBNC.SYSTEM.LOGFILE=log/psybnc.log
+PSYBNC.SYSTEM.LANGUAGE=english
+PSYBNC.HOSTALLOWS.ENTRY0=127.*;*
+PSYBNC.HOSTALLOWS.ENTRY1=10.*;*
+PSYBNC.HOSTALLOWS.ENTRY2=192.168.*;*
+... (RFC1918 + IPv6 ULA)
+```
+
+---
+
+## 3. Sistema di Build
+
+### Prerequisiti
+
+- Android SDK (compileSdkVersion 35)
+- Android NDK 26.1.10909125
+- Java 17
+
+### Processo di build completo
+
+```
+gradlew assembleDebug
+    │
+    ├── copyPsybncAssets
+    │       │
+    │       └── buildPsybncBinaries
+    │               └── ndk-build (Android.mk)
+    │                   → libs/<abi>/psybnc
+    │
+    ├── copia binari in assets/bin/<abi>/
+    ├── copia binari in jniLibs/<abi>/libpsybnc.so
+    ├── copia lang/*.lng in assets/lang/
+    └── copia scripts/DEFAULT.SCRIPT in assets/scripts/
+```
+
+### Comandi
+
+```bash
+# Build debug (da android/)
+./gradlew assembleDebug
+
+# Build release
+./gradlew assembleRelease
+
+# Solo binari nativi
+ndk-build
+```
+
+---
+
+## 4. Permessi Android
+
+| Permesso | Scopo |
+|----------|-------|
+| `INTERNET` | Connessioni IRC |
+| `FOREGROUND_SERVICE` | Servizio in foreground |
+| `FOREGROUND_SERVICE_DATA_SYNC` | Tipo servizio (Android 14+) |
+| `POST_NOTIFICATIONS` | Notifiche download DCC (Android 13+) |
+| `WAKE_LOCK` | Mantenere connessione attiva |
+| `READ/WRITE_EXTERNAL_STORAGE` | Accesso storage (Android ≤ 12) |
+| `MANAGE_EXTERNAL_STORAGE` | Accesso storage completo (Android 11+) |
+
+---
+
+## 5. Gestione DCC su Android
+
+Il DCC è gestito interamente dal codice C nativo (`p_dcc.c`). Il layer Java:
+
+1. Imposta `PSYBNC_DOWNLOAD_DIR` prima di avviare il processo
+2. Monitora `psybnc.log` (tramite `RandomAccessFile` tail-like) cercando righe
+   del tipo `File <nome> from <nick> received.`
+3. Invia una notifica Android con il nome del file e la cartella di destinazione
+
+La cartella download è configurabile dall'utente tramite:
+- SAF (`ACTION_OPEN_DOCUMENT_TREE`) per qualsiasi cartella inclusa microSD
+- Percorsi predefiniti interni/esterni (`getFilesDir()`, `getExternalFilesDir()`)
